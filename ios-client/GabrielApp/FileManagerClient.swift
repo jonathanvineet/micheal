@@ -8,6 +8,12 @@ final class FileManagerClient: NSObject {
     
     // Set this to your machine IP - your server is running at http://192.168.1.75:3000
     private let SERVER_BASE_URL = "http://192.168.1.75:3000"
+    
+    // Public accessor for base URL
+    var baseURL: String {
+        return SERVER_BASE_URL
+    }
+    
     private var session: URLSession!
     private var uploadProgressHandlers: [Int: (Double) -> Void] = [:]
     
@@ -29,7 +35,6 @@ final class FileManagerClient: NSObject {
             if let err = err { completion(.failure(err)); return }
             guard let data = data else { completion(.failure(NSError(domain: "no-data", code: -1))); return }
             do {
-                let decoder = JSONDecoder()
                 // Server returns { files: [...], currentPath: "string", count: number }
                 // We only care about the files array
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -177,7 +182,7 @@ final class FileManagerClient: NSObject {
         
         // Store progress handler
         if let handler = progressHandler {
-            uploadProgressHandlers[uploadTask.taskIdentifier] = handler
+            self.uploadProgressHandlers[uploadTask.taskIdentifier] = handler
         }
 
         uploadTask.resume()

@@ -1,84 +1,161 @@
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 
-export async function GET() {
-  const boundary = 'FRAME';
-  const encoder = new TextEncoder();
+// Shared FFmpeg process
+let sharedFFmpegProcess: ChildProcess | null = null;
+let lastFrame: Buffer | null = null;
+let frameSubscribers = 0;
+let restartTimeout: NodeJS.Timeout | null = null;
+
+// Start shared FFmpeg process
+function startSharedFFmpeg() {
+  if (sharedFFmpegProcess) return;
   
-  // Stream directly from camera using FFmpeg
-  const ffmpeg = spawn('ffmpeg', [
+  console.log('🎥 Starting shared FFmpeg process...');
+  
+  sharedFFmpegProcess = spawn('ffmpeg', [
     '-f', 'avfoundation',
     '-framerate', '30',
     '-video_size', '1024x768',
     '-i', '0',
     '-f', 'image2pipe',
     '-vcodec', 'mjpeg',
-    '-q:v', '2',
-    'pipe:1'
+    '-q:v', '3',
+    '-',
   ]);
 
-  let streamClosed = false;
   let buffer = Buffer.alloc(0);
+  const jpegStart = Buffer.from([0xFF, 0xD8]);
+  const jpegEnd = Buffer.from([0xFF, 0xD9]);
+
+  sharedFFmpegProcess.stdout?.on('data', (chunk: Buffer) => {
+    buffer = Buffer.concat([buffer, chunk]);
+
+    // Extract complete JPEG frames
+    while (true) {
+      const startIdx = buffer.indexOf(jpegStart);
+      if (startIdx === -1) {
+        if (buffer.length > 500000) buffer = Buffer.alloc(0);
+        break;
+      }
+
+      const endIdx = buffer.indexOf(jpegEnd, startIdx + 2);
+      if (endIdx === -1) {
+        if (buffer.length > 500000) buffer = Buffer.alloc(0);
+        break;
+      }
+
+      // Extract and store latest frame
+      lastFrame = buffer.slice(startIdx, endIdx + 2);
+      buffer = buffer.slice(endIdx + 2);
+    }
+  });
+
+  sharedFFmpegProcess.stderr?.on('data', (data: Buffer) => {
+    const msg = data.toString();
+    if (!msg.includes('frame=') && !msg.includes('fps=')) {
+      console.log('FFmpeg:', msg.trim());
+    }
+  });
+
+  sharedFFmpegProcess.on('exit', (code) => {
+    console.log(`FFmpeg exited with code ${code}`);
+    sharedFFmpegProcess = null;
+    lastFrame = null;
+    
+    // Restart if still have subscribers
+    if (frameSubscribers > 0) {
+      console.log('♻️ Restarting FFmpeg for active subscribers...');
+      setTimeout(startSharedFFmpeg, 1000);
+    }
+  });
+}
+
+// Stop FFmpeg when no subscribers
+function scheduleFFmpegStop() {
+  if (restartTimeout) clearTimeout(restartTimeout);
+  
+  restartTimeout = setTimeout(() => {
+    if (frameSubscribers === 0 && sharedFFmpegProcess) {
+      console.log('🛑 No subscribers, stopping FFmpeg...');
+      sharedFFmpegProcess.kill('SIGTERM');
+      sharedFFmpegProcess = null;
+      lastFrame = null;
+    }
+  }, 5000);
+}
+
+export async function GET() {
+  const boundary = 'FRAME';
+  const encoder = new TextEncoder();
+  
+  frameSubscribers++;
+  console.log(`📱 Client connected. Active subscribers: ${frameSubscribers}`);
+  
+  // Clear any pending stop
+  if (restartTimeout) {
+    clearTimeout(restartTimeout);
+    restartTimeout = null;
+  }
+  
+  // Start FFmpeg if not running
+  if (!sharedFFmpegProcess) {
+    startSharedFFmpeg();
+  }
 
   const stream = new ReadableStream({
-    start(controller) {
-      console.log('Starting direct FFmpeg video stream from camera...');
+    async start(controller) {
+      let active = true;
+      let lastSentFrame: Buffer | null = null;
       
-      ffmpeg.stdout.on('data', (chunk) => {
-        if (streamClosed) return;
+      // Send initial frame immediately if available
+      if (lastFrame) {
+        try {
+          const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${lastFrame.length}\r\n\r\n`;
+          controller.enqueue(encoder.encode(header));
+          controller.enqueue(new Uint8Array(lastFrame));
+          controller.enqueue(encoder.encode('\r\n'));
+          lastSentFrame = lastFrame;
+        } catch (err) {
+          console.error('Error sending initial frame:', err);
+        }
+      }
+      
+      // Polling loop - read latest frame and send if different
+      const sendFrames = setInterval(() => {
+        if (!active) {
+          clearInterval(sendFrames);
+          return;
+        }
         
-        buffer = Buffer.concat([buffer, chunk]);
-        
-        // Look for JPEG markers (FFD8 = start, FFD9 = end)
-        let startIdx = 0;
-        while (true) {
-          const jpegStart = buffer.indexOf(Buffer.from([0xFF, 0xD8]), startIdx);
-          if (jpegStart === -1) break;
-          
-          const jpegEnd = buffer.indexOf(Buffer.from([0xFF, 0xD9]), jpegStart + 2);
-          if (jpegEnd === -1) break;
-          
-          // Extract complete JPEG frame
-          const frame = buffer.slice(jpegStart, jpegEnd + 2);
-          
-          // Send multipart boundary + frame
-          const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`;
-          
+        // Check if we have a new frame
+        if (lastFrame && lastFrame !== lastSentFrame) {
           try {
+            const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${lastFrame.length}\r\n\r\n`;
             controller.enqueue(encoder.encode(header));
-            controller.enqueue(new Uint8Array(frame));
+            controller.enqueue(new Uint8Array(lastFrame));
             controller.enqueue(encoder.encode('\r\n'));
+            lastSentFrame = lastFrame;
           } catch (err) {
-            console.error('Enqueue error:', err);
+            // Client disconnected
+            active = false;
+            clearInterval(sendFrames);
           }
-          
-          // Remove processed data
-          buffer = buffer.slice(jpegEnd + 2);
-          startIdx = 0;
         }
-      });
+      }, 50); // 20 FPS for better compatibility
 
-      ffmpeg.stderr.on('data', (data) => {
-        const msg = data.toString();
-        if (!msg.includes('frame=')) {
-          console.log('FFmpeg:', msg.trim());
-        }
-      });
-
-      ffmpeg.on('error', (err) => {
-        console.error('FFmpeg error:', err);
-        if (!streamClosed) controller.error(err);
-      });
-
-      ffmpeg.on('exit', (code) => {
-        console.log(`FFmpeg exited with code ${code}`);
-        if (!streamClosed) controller.close();
-      });
+      // Store cleanup function
+      (controller as any).cleanup = () => {
+        active = false;
+        clearInterval(sendFrames);
+        frameSubscribers--;
+        console.log(`👋 Client disconnected. Active subscribers: ${frameSubscribers}`);
+        scheduleFFmpegStop();
+      };
     },
 
     cancel() {
-      console.log('Stream cancelled, killing FFmpeg...');
-      streamClosed = true;
-      ffmpeg.kill('SIGTERM');
+      const cleanup = (this as any).cleanup;
+      if (cleanup) cleanup();
     }
   });
 
@@ -92,5 +169,7 @@ export async function GET() {
     },
   });
 }
+
+
 
 
