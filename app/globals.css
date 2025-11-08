@@ -11,18 +11,33 @@
   --batman-accent: #333333;
   --font-geist-sans: ui-sans-serif, system-ui, sans-serif;
   --font-geist-mono: ui-monospace, monospace;
+  --glass-bg: rgba(20, 20, 30, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: rgba(0, 0, 0, 0.5);
 }
 
 body {
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0f0f0f 100%);
-  background-image: url('/gotham-skyline.svg');
+  background-color: #0a0a0a;
+  background-image: url('https://images8.alphacoders.com/108/1081179.jpg');
   background-attachment: fixed;
   background-size: cover;
-  background-position: center;
+  background-position: center center;
+  background-repeat: no-repeat;
   color: var(--foreground);
   font-family: var(--font-geist-sans);
   min-height: 100vh;
+  min-width: 100vw;
   position: relative;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body::before {
@@ -32,101 +47,159 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, rgba(10, 10, 10, 0.7) 0%, rgba(26, 26, 26, 0.5) 50%, rgba(15, 15, 15, 0.7) 100%);
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, rgba(10, 15, 25, 0.65) 0%, rgba(15, 20, 30, 0.55) 50%, rgba(10, 15, 25, 0.65) 100%);
+  backdrop-filter: blur(0px);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Batman-themed components */
+/* Glass morphism cards - iOS 18+ style */
 .batman-card {
-  background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%);
-  border: 1px solid #333333;
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-  transition: all 0.3s ease;
+  background: rgba(20, 25, 35, 0.35);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+  border-radius: 20px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 0.5px rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.batman-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(255, 255, 255, 0.2) 50%, 
+    transparent
+  );
+  opacity: 0.5;
 }
 
 .batman-card:hover {
+  background: rgba(25, 30, 40, 0.45);
   border-color: rgba(255, 215, 0, 0.3);
-  box-shadow: 0 20px 40px rgba(255, 215, 0, 0.2);
-  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 40px rgba(255, 215, 0, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 0 0 1px rgba(255, 215, 0, 0.1);
+  transform: translateY(-2px) scale(1.01);
 }
 
 .batman-button {
-  background: linear-gradient(135deg, #ffd700 0%, #ffb900 100%);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.9) 0%, rgba(255, 185, 0, 0.95) 100%);
   color: #000000;
-  font-weight: bold;
-  border-radius: 8px;
+  font-weight: 600;
+  border-radius: 12px;
   padding: 12px 24px;
-  box-shadow: 0 8px 20px rgba(255, 215, 0, 0.3);
-  transition: all 0.3s ease;
+  box-shadow: 
+    0 4px 16px rgba(255, 215, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border: none;
   cursor: pointer;
+  backdrop-filter: blur(10px);
 }
 
 .batman-button:hover {
-  box-shadow: 0 12px 30px rgba(255, 215, 0, 0.5);
-  transform: scale(1.05);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 1) 0%, rgba(255, 185, 0, 1) 100%);
+  box-shadow: 
+    0 8px 24px rgba(255, 215, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px) scale(1.02);
 }
 
 .batman-button:active {
-  transform: scale(0.95);
+  transform: translateY(0) scale(0.98);
+  box-shadow: 
+    0 2px 8px rgba(255, 215, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .batman-button-secondary {
-  background: #2a2a2a;
-  border: 1px solid rgba(255, 215, 0, 0.5);
+  background: rgba(30, 30, 40, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 215, 0, 0.4);
   color: #ffd700;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 12px 24px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-  transition: all 0.3s ease;
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
 }
 
 .batman-button-secondary:hover {
-  background: rgba(255, 215, 0, 0.1);
-  border-color: #ffd700;
-  transform: scale(1.05);
+  background: rgba(40, 40, 50, 0.6);
+  border-color: rgba(255, 215, 0, 0.6);
+  box-shadow: 
+    0 6px 20px rgba(255, 215, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px) scale(1.02);
 }
 
 .batman-button-secondary:active {
-  transform: scale(0.95);
+  transform: translateY(0) scale(0.98);
 }
 
 .batman-input {
-  background: #1a1a1a;
-  border: 1px solid #333333;
-  color: #ededed;
-  border-radius: 8px;
+  background: rgba(20, 20, 30, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
   padding: 12px 16px;
-  transition: all 0.3s ease;
-}
-
-.batman-input::placeholder {
-  color: #666666;
+  color: #ffffff;
+  font-size: 14px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
 }
 
 .batman-input:focus {
-  border-color: #ffd700;
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.2);
+  background: rgba(25, 25, 35, 0.6);
+  border-color: rgba(255, 215, 0, 0.5);
+  box-shadow: 
+    0 0 0 3px rgba(255, 215, 0, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.batman-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .batman-progress {
-  background: #1a1a1a;
+  background: rgba(20, 20, 30, 0.5);
+  backdrop-filter: blur(10px);
   border-radius: 9999px;
   overflow: hidden;
-  border: 1px solid #333333;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .batman-progress-bar {
-  background: linear-gradient(90deg, #ffd700 0%, #ffb900 50%, #ffd700 100%);
+  background: linear-gradient(90deg, 
+    rgba(255, 215, 0, 0.9) 0%, 
+    rgba(255, 185, 0, 0.95) 50%, 
+    rgba(255, 215, 0, 0.9) 100%
+  );
   background-size: 200% 100%;
   height: 100%;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 
+    0 0 20px rgba(255, 215, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   animation: shimmer 2s infinite linear;
 }
 
@@ -136,19 +209,23 @@ body::before {
 }
 
 .file-item {
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
+  background: rgba(25, 25, 35, 0.4);
+  backdrop-filter: blur(15px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   padding: 16px;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .file-item:hover {
-  border-color: rgba(255, 215, 0, 0.5);
-  background: #2a2a2a;
-  box-shadow: 0 8px 20px rgba(255, 215, 0, 0.1);
-  transform: translateX(4px);
+  background: rgba(30, 30, 40, 0.5);
+  border-color: rgba(255, 215, 0, 0.4);
+  box-shadow: 
+    0 8px 24px rgba(255, 215, 0, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: translateY(-2px);
 }
 
 /* Image thumbnail styles */
@@ -172,16 +249,21 @@ body::before {
 }
 
 .drop-zone {
-  border: 2px dashed #333333;
-  border-radius: 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
   padding: 48px;
-  transition: all 0.3s ease;
+  background: rgba(20, 20, 30, 0.3);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .drop-zone.active {
-  border-color: #ffd700;
-  background: rgba(255, 215, 0, 0.05);
-  box-shadow: 0 8px 20px rgba(255, 215, 0, 0.2);
+  border-color: rgba(255, 215, 0, 0.8);
+  background: rgba(255, 215, 0, 0.1);
+  backdrop-filter: blur(15px);
+  box-shadow: 
+    0 8px 32px rgba(255, 215, 0, 0.3),
+    inset 0 0 60px rgba(255, 215, 0, 0.1);
 }
 
 /* Batarang spinner animation */
@@ -212,20 +294,20 @@ body::before {
   }
 }
 
-/* Loading screen styles */
+/* Loading screen styles with glassmorphism */
 .loading-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(26, 26, 26, 0.9) 50%, rgba(15, 15, 15, 0.95) 100%);
+  background: rgba(10, 15, 25, 0.8);
+  backdrop-filter: blur(20px) saturate(150%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 50;
-  backdrop-filter: blur(5px);
 }
 
 .loading-content {
@@ -313,4 +395,37 @@ body::before {
   height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.5));
+}
+
+/* Custom Scrollbar - iOS Style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(20, 20, 30, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 215, 0, 0.3);
+  border-radius: 4px;
+  backdrop-filter: blur(10px);
+  transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 215, 0, 0.5);
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(255, 215, 0, 0.3);
+  color: #ffffff;
+}
+
+::-moz-selection {
+  background: rgba(255, 215, 0, 0.3);
+  color: #ffffff;
 }
