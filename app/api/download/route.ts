@@ -32,9 +32,12 @@ export async function GET(request: NextRequest) {
     const file = fs.readFileSync(fullPath);
     const fileName = path.basename(fullPath);
     
+    // Encode filename to handle special characters (RFC 5987)
+    const encodedFileName = encodeURIComponent(fileName);
+    
     return new NextResponse(file, {
       headers: {
-        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodedFileName}`,
         'Content-Type': 'application/octet-stream',
       },
     });

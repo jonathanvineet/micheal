@@ -73,8 +73,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // For Next.js, we need to use formData() which already handles multipart parsing
     const formData = await request.formData();
-    const dirPath = formData.get('path') as string || '';
+    const dirPath = (formData.get('path') as string) || '';
     const uploadPath = path.join(UPLOAD_DIR, dirPath);
     
     // Security check
@@ -91,41 +92,38 @@ export async function POST(request: NextRequest) {
     const compressedFiles: string[] = [];
     let totalSize = 0;
     
-    // Process files in batches to reduce memory usage
+    // Process files from formData
     const fileData: Array<{ relativePath: string; filePath: string; size: number }> = [];
     const entries = Array.from(formData.entries());
     const fileEntries = entries.filter(([key]) => key.startsWith('file-'));
     
-    // Process files in batches
-    const BATCH_SIZE = 20;
-    for (let i = 0; i < fileEntries.length; i += BATCH_SIZE) {
-      const batch = fileEntries.slice(i, i + BATCH_SIZE);
+    // Process files sequentially to avoid memory issues
+    for (const [key, value] of fileEntries) {
+      const file = value as File;
+      const fieldIndex = key.replace('file-', '');
+      const pathKey = `path-${fieldIndex}`;
+      const relativePath = (formData.get(pathKey) as string) || file.name;
       
-      await Promise.all(batch.map(async ([key, value]) => {
-        const file = value as File;
-        const relativePath = formData.get(`path-${key.substring(5)}`) as string || file.name;
-        
-        // Create subdirectories if needed
-        const fileDir = path.dirname(relativePath);
-        if (fileDir && fileDir !== '.') {
-          const fullDir = path.join(uploadPath, fileDir);
-          if (!fs.existsSync(fullDir)) {
-            fs.mkdirSync(fullDir, { recursive: true });
-          }
+      // Create subdirectories if needed
+      const fileDir = path.dirname(relativePath);
+      if (fileDir && fileDir !== '.') {
+        const fullDir = path.join(uploadPath, fileDir);
+        if (!fs.existsSync(fullDir)) {
+          fs.mkdirSync(fullDir, { recursive: true });
         }
+      }
 
-        const filePath = path.join(uploadPath, relativePath);
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-
-        // Use async write for better performance
-        await fs.promises.writeFile(filePath, buffer);
-        
-        const fileSize = buffer.length;
-        totalSize += fileSize;
-        fileData.push({ relativePath, filePath, size: fileSize });
-        uploadedFiles.push(relativePath);
-      }));
+      const finalPath = path.join(uploadPath, relativePath);
+      
+      // Stream file to disk to avoid loading entire file in memory
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      await fs.promises.writeFile(finalPath, buffer);
+      
+      const fileSize = buffer.length;
+      totalSize += fileSize;
+      fileData.push({ relativePath, filePath: finalPath, size: fileSize });
+      uploadedFiles.push(relativePath);
     }
 
     if (uploadedFiles.length === 0) {
@@ -138,13 +136,11 @@ export async function POST(request: NextRequest) {
       if (totalSize > COMPRESSION_THRESHOLD) {
         console.log(`Total size ${formatBytes(totalSize)} exceeds threshold. Compressing...`);
         
-        // Compress entire folder structure
         try {
           await compressFolder(uploadPath);
           compressedFiles.push('Folder compressed');
         } catch (compressError) {
           console.error('Compression error:', compressError);
-          // Continue without compression
         }
       }
     } else {
@@ -158,7 +154,6 @@ export async function POST(request: NextRequest) {
           compressedFiles.push(fileInfo.relativePath);
         } catch (compressError) {
           console.error('Compression error:', compressError);
-          // Continue without compression
         }
       }
     }
