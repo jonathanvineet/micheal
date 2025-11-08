@@ -1,16 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  Folder, 
-  File, 
-  Upload, 
-  FolderPlus, 
-  ArrowLeft, 
-  Trash2, 
-  Download,
-  Home
-} from 'lucide-react';
+import { useState, useEffect, DragEvent } from 'react';
+import { Upload, FolderPlus, Download, Trash2, Folder, File, Home, ChevronRight, Loader2, FileText, FileCode, Film, Music, Archive, Image as ImageIcon, Eye, ArrowLeft } from 'lucide-react';
 
 interface FileItem {
   name: string;
@@ -30,6 +21,54 @@ export default function FileManager() {
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Helper function to get file icon based on extension
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.toLowerCase().split('.').pop();
+    const iconProps = { size: 24, className: "text-[#ffd700]" };
+    
+    // Image files
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext || '')) {
+      return <ImageIcon {...iconProps} />;
+    }
+    // Video files
+    if (['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm'].includes(ext || '')) {
+      return <Film {...iconProps} />;
+    }
+    // Audio files
+    if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext || '')) {
+      return <Music {...iconProps} />;
+    }
+    // Code files
+    if (['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'cpp', 'c', 'cs', 'php', 'rb', 'go', 'rs', 'swift'].includes(ext || '')) {
+      return <FileCode {...iconProps} />;
+    }
+    // Document files
+    if (['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'].includes(ext || '')) {
+      return <FileText {...iconProps} />;
+    }
+    // Archive files
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext || '')) {
+      return <Archive {...iconProps} />;
+    }
+    // Default file icon
+    return <File {...iconProps} />;
+  };
+
+  // Check if file is an image
+  const isImageFile = (fileName: string) => {
+    const ext = fileName.toLowerCase().split('.').pop();
+    return ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'].includes(ext || '');
+  };
+
+  // Handle image preview
+  const handleImagePreview = (file: FileItem) => {
+    if (isImageFile(file.name)) {
+      const imagePath = `/api/download?path=${encodeURIComponent(file.path)}`;
+      setPreviewImage(imagePath);
+    }
+  };
 
   // Debounced progress update for better performance
   const updateProgress = (percent: number, message?: string) => {
@@ -553,65 +592,84 @@ export default function FileManager() {
   const pathSegments = currentPath.split('/').filter(Boolean);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#1a1a1a] to-[#0f0f0f]">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div className="batman-card overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
-            <h1 className="text-3xl font-bold mb-2">File Manager</h1>
-            <p className="text-blue-100">Upload, organize, and manage your files</p>
+          <div className="bg-gradient-to-r from-[#1a1a1a] via-[#2a2a2a] to-[#1a1a1a] text-white p-8 border-b-2 border-[#ffd700]">
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-16 h-16 bg-gradient-to-br from-[#ffd700] to-[#ffb900] rounded-lg flex items-center justify-center shadow-lg shadow-[#ffd700]/50">
+                <Home size={32} className="text-black" />
+              </div>
+              <div>
+                <h1 className="text-4xl font-black tracking-wider mb-1 bg-gradient-to-r from-[#ffd700] to-[#ffb900] bg-clip-text text-transparent">
+                  GABRIEL
+                </h1>
+                <p className="text-gray-400 text-sm">Your Digital Storage Vault</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-4 px-2">
+              <div className="w-2 h-2 bg-[#ffd700] rounded-full animate-pulse"></div>
+              <p className="text-[#ffd700] text-sm font-semibold">Secure • Fast • Organized</p>
+            </div>
           </div>
 
           {/* Upload Progress Indicator */}
           {uploading && (
-            <div className="bg-blue-50 border-b border-blue-200 p-4">
-              <div className="space-y-2">
+            <div className="bg-gradient-to-r from-[#1a1a1a] to-[#2a2a2a] border-b-2 border-[#ffd700]/30 p-6">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                    <span className="text-blue-700 font-medium">{uploadProgress}</span>
+                    <div className="relative">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-t-2 border-[#ffd700]"></div>
+                      <div className="absolute inset-0 animate-ping rounded-full bg-[#ffd700]/20"></div>
+                    </div>
+                    <span className="text-[#ffd700] font-semibold">{uploadProgress}</span>
                   </div>
-                  <span className="text-blue-600 font-semibold">{uploadPercent}%</span>
+                  <span className="text-[#ffd700] font-bold text-xl">{uploadPercent}%</span>
                 </div>
                 {/* Progress Bar */}
-                <div className="w-full bg-blue-200 rounded-full h-2.5 overflow-hidden">
+                <div className="batman-progress h-4">
                   <div 
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out animate-pulse"
-                    style={{ width: `${uploadPercent}%` }}
+                    className="batman-progress-bar"
+                    style={{ width: `${uploadPercent}%`, backgroundSize: '200% 100%' }}
                   ></div>
                 </div>
-                <p className="text-xs text-blue-600 text-right">Page is responsive - you can navigate away if needed</p>
+                <p className="text-xs text-gray-400 text-right flex items-center justify-end gap-2">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                  System operational - navigate freely
+                </p>
               </div>
             </div>
           )}
 
           {/* Toolbar */}
-          <div className="border-b bg-gray-50 p-4">
+          <div className="border-b border-[#333333] bg-[#1a1a1a] p-5">
             <div className="flex flex-wrap gap-3 items-center">
               <button
                 onClick={navigateHome}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                className="batman-button"
                 title="Home"
                 disabled={uploading}
               >
-                <Home size={18} />
-                <span className="hidden sm:inline">Home</span>
+                <Home size={18} className="inline mr-2" />
+                <span className="hidden sm:inline">HOME</span>
               </button>
               
               {currentPath && (
                 <button
                   onClick={navigateBack}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="batman-button-secondary disabled:opacity-30 disabled:cursor-not-allowed"
                   disabled={uploading}
                 >
-                  <ArrowLeft size={18} />
-                  <span className="hidden sm:inline">Back</span>
+                  <ArrowLeft size={18} className="inline mr-2" />
+                  <span className="hidden sm:inline">BACK</span>
                 </button>
               )}
 
-              <label className={`flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
-                <Upload size={18} />
-                <span className="hidden sm:inline">Upload File</span>
+              <label className={`batman-button ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                <Upload size={18} className="inline mr-2" />
+                <span className="hidden sm:inline">UPLOAD FILE</span>
                 <input
                   type="file"
                   onChange={handleFileInputChange}
@@ -620,9 +678,9 @@ export default function FileManager() {
                 />
               </label>
 
-              <label className={`flex items-center gap-2 px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
-                <Folder size={18} />
-                <span className="hidden sm:inline">Upload Folder</span>
+              <label className={`batman-button-secondary ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                <Folder size={18} className="inline mr-2" />
+                <span className="hidden sm:inline">UPLOAD FOLDER</span>
                 <input
                   type="file"
                   onChange={handleFolderInputChange}
@@ -635,11 +693,11 @@ export default function FileManager() {
 
               <button
                 onClick={() => setShowNewFolderInput(!showNewFolderInput)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="batman-button-secondary disabled:opacity-30 disabled:cursor-not-allowed"
                 disabled={uploading}
               >
-                <FolderPlus size={18} />
-                <span className="hidden sm:inline">New Folder</span>
+                <FolderPlus size={18} className="inline mr-2" />
+                <span className="hidden sm:inline">NEW FOLDER</span>
               </button>
             </div>
 
@@ -650,45 +708,47 @@ export default function FileManager() {
                   type="text"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="Folder name"
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter folder name..."
+                  className="batman-input flex-1"
                   onKeyPress={(e) => e.key === 'Enter' && handleCreateFolder()}
                 />
                 <button
                   onClick={handleCreateFolder}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="batman-button"
                 >
-                  Create
+                  CREATE
                 </button>
                 <button
                   onClick={() => {
                     setShowNewFolderInput(false);
                     setNewFolderName('');
                   }}
-                  className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                  className="batman-button-secondary"
                 >
-                  Cancel
+                  CANCEL
                 </button>
               </div>
             )}
           </div>
 
           {/* Breadcrumb */}
-          <div className="bg-white border-b p-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Home size={16} className="text-gray-400" />
+          <div className="bg-[#0f0f0f] border-b border-[#333333] p-4">
+            <div className="flex items-center gap-2 text-sm">
+              <div className="w-8 h-8 bg-[#ffd700]/10 rounded-lg flex items-center justify-center">
+                <Home size={14} className="text-[#ffd700]" />
+              </div>
               <button 
                 onClick={navigateHome}
-                className="hover:text-blue-600 font-medium"
+                className="breadcrumb font-semibold"
               >
                 uploads
               </button>
               {pathSegments.map((segment, index) => (
                 <span key={index} className="flex items-center gap-2">
-                  <span className="text-gray-400">/</span>
+                  <span className="text-[#ffd700]">/</span>
                   <button
                     onClick={() => navigateToFolder(pathSegments.slice(0, index + 1).join('/'))}
-                    className="hover:text-blue-600 font-medium"
+                    className="breadcrumb font-semibold"
                   >
                     {segment}
                   </button>
@@ -703,87 +763,122 @@ export default function FileManager() {
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
-            className={`relative ${dragActive && !uploading ? 'bg-blue-50' : ''}`}
+            className={`relative ${dragActive && !uploading ? 'bg-[#ffd700]/5' : ''}`}
           >
             {dragActive && !uploading && (
-              <div className="absolute inset-0 bg-blue-100 bg-opacity-90 flex items-center justify-center z-10 border-4 border-dashed border-blue-400 m-4 rounded-lg">
-                <div className="text-center">
-                  <Upload size={48} className="mx-auto text-blue-600 mb-2" />
-                  <p className="text-xl font-semibold text-blue-600">Drop file here to upload</p>
+              <div className="absolute inset-0 bg-gradient-to-br from-[#ffd700]/20 to-[#ffb900]/20 flex items-center justify-center z-10 border-4 border-dashed border-[#ffd700] m-4 rounded-lg backdrop-blur-sm">
+                <div className="text-center p-8 bg-[#1a1a1a]/90 rounded-xl border border-[#ffd700]/50 shadow-2xl shadow-[#ffd700]/30">
+                  <Upload size={64} className="mx-auto text-[#ffd700] mb-4 animate-pulse" />
+                  <p className="text-2xl font-bold text-[#ffd700] mb-2">RELEASE TO UPLOAD</p>
+                  <p className="text-gray-400">Files will be secured instantly</p>
                 </div>
               </div>
             )}
 
             {uploading && (
-              <div className="absolute inset-0 bg-gray-100 bg-opacity-80 flex items-center justify-center z-20 m-4 rounded-lg">
-                <div className="text-center bg-white p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-xl font-semibold text-gray-800 mb-2">{uploadProgress}</p>
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden mb-2">
+              <div className="absolute inset-0 bg-[#0a0a0a]/95 flex items-center justify-center z-20 m-4 rounded-lg backdrop-blur-lg">
+                <div className="text-center bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] p-10 rounded-2xl shadow-2xl max-w-md w-full mx-4 border-2 border-[#ffd700]/30">
+                  <div className="relative mb-6">
+                    <div className="animate-spin rounded-full h-20 w-20 border-b-4 border-t-4 border-[#ffd700] mx-auto"></div>
+                    <div className="absolute inset-0 animate-ping rounded-full bg-[#ffd700]/20 mx-auto" style={{width: '80px', height: '80px', margin: 'auto'}}></div>
+                  </div>
+                  <p className="text-xl font-bold text-white mb-4">{uploadProgress}</p>
+                  <div className="batman-progress h-4 mb-4">
                     <div 
-                      className="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
-                      style={{ width: `${uploadPercent}%` }}
+                      className="batman-progress-bar"
+                      style={{ width: `${uploadPercent}%`, backgroundSize: '200% 100%' }}
                     ></div>
                   </div>
-                  <p className="text-2xl font-bold text-blue-600 mb-1">{uploadPercent}%</p>
-                  <p className="text-sm text-gray-500">Please wait...</p>
+                  <p className="text-3xl font-black bg-gradient-to-r from-[#ffd700] to-[#ffb900] bg-clip-text text-transparent mb-2">{uploadPercent}%</p>
+                  <p className="text-sm text-gray-400">Processing secure transfer...</p>
                 </div>
               </div>
             )}
 
             {/* File List */}
-            <div className="p-6">
+            <div className="p-6 min-h-[400px]">
               {loading ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-4">Loading files...</p>
+                <div className="text-center py-20">
+                  <div className="relative inline-block">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-t-4 border-[#ffd700]"></div>
+                    <div className="absolute inset-0 animate-ping rounded-full bg-[#ffd700]/20"></div>
+                  </div>
+                  <p className="mt-6 text-[#ffd700] font-semibold text-lg">LOADING FILES...</p>
+                  <p className="text-gray-500 text-sm mt-2">Accessing vault...</p>
                 </div>
               ) : files.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <Folder size={48} className="mx-auto mb-4 text-gray-300" />
-                  <p className="text-lg">This folder is empty</p>
-                  <p className="text-sm mt-2">Upload files or create a new folder to get started</p>
+                <div className="text-center py-20">
+                  <div className="w-24 h-24 bg-[#ffd700]/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border-2 border-[#ffd700]/30">
+                    <Folder size={48} className="text-[#ffd700]" />
+                  </div>
+                  <p className="text-xl font-bold text-gray-300 mb-2">VAULT IS EMPTY</p>
+                  <p className="text-gray-500">Upload files or create folders to begin</p>
                 </div>
               ) : (
-                <div className="grid gap-2">
+                <div className="grid gap-3">
                   {files.map((file, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors group"
+                      className="file-item"
                     >
-                      <div 
-                        className="flex items-center gap-4 flex-1 cursor-pointer"
-                        onClick={() => file.isDirectory && navigateToFolder(file.path)}
-                      >
-                        {file.isDirectory ? (
-                          <Folder size={32} className="text-blue-500 flex-shrink-0" />
-                        ) : (
-                          <File size={32} className="text-gray-500 flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{file.name}</p>
-                          <p className="text-sm text-gray-500">
-                            {file.isDirectory ? 'Folder' : formatFileSize(file.size)} • {formatDate(file.modified)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 ml-4">
-                        {!file.isDirectory && (
-                          <button
-                            onClick={() => handleDownload(file.path, file.name)}
-                            className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                            title="Download"
-                          >
-                            <Download size={18} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDelete(file.path, file.name)}
-                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                          title="Delete"
+                      <div className="flex items-center justify-between">
+                        <div 
+                          className="flex items-center gap-4 flex-1 cursor-pointer"
+                          onClick={() => file.isDirectory ? navigateToFolder(file.path) : handleImagePreview(file)}
                         >
-                          <Trash2 size={18} />
-                        </button>
+                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden ${file.isDirectory ? 'bg-[#ffd700]/10' : 'bg-[#333333]'}`}>
+                            {file.isDirectory ? (
+                              // Batarang/Batman icon for folders
+                              <svg viewBox="0 0 100 50" className="w-8 h-8 text-[#ffd700]" fill="currentColor">
+                                <path d="M50,5 L65,15 L80,10 L75,25 L90,30 L80,35 L85,45 L70,42 L60,48 L50,40 L40,48 L30,42 L15,45 L20,35 L10,30 L25,25 L20,10 L35,15 Z" />
+                                <ellipse cx="50" cy="25" rx="8" ry="10" fill="#0a0a0a" opacity="0.5"/>
+                              </svg>
+                            ) : isImageFile(file.name) ? (
+                              // Show image thumbnail for image files
+                              <img 
+                                src={`/api/download?path=${encodeURIComponent(file.path)}`}
+                                alt={file.name}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              getFileIcon(file.name)
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-gray-100 truncate text-lg">{file.name}</p>
+                              {!file.isDirectory && isImageFile(file.name) && (
+                                <span title="Click to preview">
+                                  <Eye size={16} className="text-[#ffd700] opacity-70" />
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-500 flex items-center gap-2">
+                              <span>{file.isDirectory ? 'FOLDER' : formatFileSize(file.size)}</span>
+                              <span className="text-[#ffd700]">•</span>
+                              <span>{formatDate(file.modified)}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-4">
+                          {!file.isDirectory && (
+                            <button
+                              onClick={() => handleDownload(file.path, file.name)}
+                              className="p-3 text-[#ffd700] hover:bg-[#ffd700]/10 rounded-lg transition-all hover:scale-110 border border-[#ffd700]/0 hover:border-[#ffd700]/50"
+                              title="Download"
+                            >
+                              <Download size={20} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(file.path, file.name)}
+                            className="p-3 text-red-500 hover:bg-red-500/10 rounded-lg transition-all hover:scale-110 border border-red-500/0 hover:border-red-500/50"
+                            title="Delete"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -792,7 +887,38 @@ export default function FileManager() {
             </div>
           </div>
         </div>
+
+        {/* Footer */}
+        <div className="mt-6 text-center">
+          <p className="text-gray-600 text-sm flex items-center justify-center gap-2">
+            <span className="w-2 h-2 bg-[#ffd700] rounded-full animate-pulse"></span>
+            Powered by <span className="font-bold text-[#ffd700]">GABRIEL</span> - Your Secure Storage Solution
+          </p>
+        </div>
       </div>
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div 
+          className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center">
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-4 right-4 p-3 bg-[#ffd700] text-black rounded-lg hover:bg-[#ffb900] transition-all z-10 font-bold"
+            >
+              ✕ CLOSE
+            </button>
+            <img 
+              src={previewImage} 
+              alt="Preview" 
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl shadow-[#ffd700]/20"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
