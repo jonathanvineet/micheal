@@ -1152,7 +1152,7 @@ export default function FileManager() {
                             {file.isDirectory ? (
                               <div className="batarang-icon" style={{ width: '40px', height: '40px' }}>
                                 <img
-                                  src="public/images/png-transparent-batman-superman-injustice-2-comics-batman-comics-heroes-logo-removebg-preview.png"
+                                  src="/images/png-transparent-batman-superman-injustice-2-comics-batman-comics-heroes-logo-removebg-preview.png"
                                   alt="Folder"
                                 />
                               </div>

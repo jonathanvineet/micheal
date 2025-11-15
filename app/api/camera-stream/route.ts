@@ -39,158 +39,235 @@ function detectWebcam(): string | null {
     return detectedCameraIndex;
   }
 
-  try {
-    console.log(`🔍 Detecting webcam on ${platform}...`);
-    
-    let output = '';
-    
-    let result;
-    if (isWindows) {
-      // Windows: Use DirectShow to list devices
-      result = spawnSync('ffmpeg', ['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], {
-        encoding: 'utf-8'
-      });
-    } else if (isMac) {
-      // macOS: Use AVFoundation
-      result = spawnSync('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''], {
-        encoding: 'utf-8'
-      });
-    } else {
-      // Linux: Use v4l2
-      result = spawnSync('ffmpeg', ['-f', 'v4l2', '-list_devices', 'true', '-i', 'dummy'], {
-        encoding: 'utf-8'
-      });
-    }
-    
-    // FFmpeg outputs device list to stderr
-    output = result.stderr || result.stdout || '';
-    
-    if (result.error) {
-      console.log('⚠️ Error running ffmpeg:', result.error.message);
-    }
-    
-    console.log('Camera detection output length:', output.length);
-    if (output.length > 0) {
-      console.log('First 500 chars:', output.substring(0, 500));
-    }
-    
-    // Parse won't work because output is on stderr, so we catch it
-    if (!output) {
-      console.warn('⚠️ No output from ffmpeg detection command');
-      return null;
-    }
-    
-    if (isWindows) {
-      // Windows DirectShow parsing - look for C110 or Logitech webcam
-      const lines = output.split('\n');
-      console.log(`📋 Parsing ${lines.length} lines of output...`);
+  console.log(`🔍 Detecting webcam on ${platform}...`);
+  
+  let result;
+  if (isWindows) {
+    result = spawnSync('ffmpeg', ['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], {
+      encoding: 'utf-8'
+    });
+  } else if (isMac) {
+    result = spawnSync('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''], {
+      encoding: 'utf-8'
+    });
+  } else { // Linux
+    try {
+      console.log('🐧 Trying v4l2-ctl to detect webcam...');
+      const v4l2Result = spawnSync('v4l2-ctl', ['--list-devices'], { encoding: 'utf-8' });
       
-      let fallbackCamera: string | null = null;
-      let fallbackCameraName: string | null = null;
-      
-      for (const line of lines) {
-        // Look for video devices
-        if (line.includes('"') && line.includes('(video)')) {
-          console.log(`🎥 Found video line: ${line.trim()}`);
-          const match = line.match(/"([^"]+)"/);
-          if (match) {
-            const cameraName = match[1];
-            console.log(`📹 Detected camera: ${cameraName}`);
-            
-            // HIGHEST PRIORITY: C110 or Logitech webcams
-            if (cameraName.toLowerCase().includes('c110') || 
-                cameraName.toLowerCase().includes('logitech')) {
-              detectedCameraName = cameraName;
-              detectedCameraIndex = `video=${detectedCameraName}`;
-              console.log(`🎯 Using Logitech/C110 camera: ${detectedCameraName}`);
-              return detectedCameraIndex;
-            }
-            
-            // Save as fallback if it's a webcam (but not HP)
-            if (!fallbackCamera && 
-                cameraName.toLowerCase().includes('webcam') && 
-                !cameraName.toLowerCase().includes('hp')) {
-              fallbackCamera = `video=${cameraName}`;
-              fallbackCameraName = cameraName;
-            }
-            
-            // Last resort fallback - any video device
-            if (!fallbackCamera) {
-              fallbackCamera = `video=${cameraName}`;
-              fallbackCameraName = cameraName;
+      if (v4l2Result.error) {
+        throw v4l2Result.error;
+      }
+
+      if (v4l2Result.stdout) {
+        const devices = v4l2Result.stdout.split('\n\n');
+        const cameraCandidates: { name: string, path: string, priority: number }[] = [];
+
+        for (const device of devices) {
+          const lines = device.split('\n').map(l => l.trim());
+          if (lines.length < 2) continue;
+
+          const deviceName = lines[0];
+          const devicePathLine = lines.find(l => l.startsWith('/dev/vide2'));
+
+          if (deviceName && devicePathLine) {
+            const match = devicePathLine.match(/(\/dev\/video\d+)/);
+            if (match) {
+              const devicePath = match[1];
+              let priority = 0;
+              
+              const lowerDeviceName = deviceName.toLowerCase();
+
+              if (lowerDeviceName.includes('c110') || lowerDeviceName.includes('logitech')) {
+                priority = 3; // Highest priority
+              } else if (lowerDeviceName.includes('webcam') && !lowerDeviceName.includes('hp')) {
+                priority = 2; // Medium priority, avoid integrated HP
+              } else if (lowerDeviceName.includes('usb')) {
+                priority = 1; // Low priority for generic USB devices
+              }
+              
+              console.log(`📹 Found device with v4l2-ctl: ${deviceName} at ${devicePath} (Priority: ${priority})`);
+              cameraCandidates.push({ name: deviceName, path: devicePath, priority });
             }
           }
         }
+
+        if (cameraCandidates.length > 0) {
+          cameraCandidates.sort((a, b) => b.priority - a.priority);
+          
+          const bestCandidate = cameraCandidates[0];
+          detectedCameraIndex = bestCandidate.path;
+          detectedCameraName = bestCandidate.name;
+          
+          console.log(`✅ Selected camera with v4l2-ctl: ${detectedCameraName} (${detectedCameraIndex})`);
+          return detectedCameraIndex;
+        }
       }
-      
-      // Use fallback if we found one
-      if (fallbackCamera) {
-        detectedCameraIndex = fallbackCamera;
-        detectedCameraName = fallbackCameraName;
-        console.log(`✅ Using fallback video device: ${fallbackCameraName}`);
+      console.log('⚠️ v4l2-ctl did not find a suitable video device, falling back to ffmpeg.');
+    } catch (e: any) {
+      console.log('⚠️ v4l2-ctl not found or failed, falling back to ffmpeg detection.');
+      if (e.code === 'ENOENT') {
+        console.error('  Info: `v4l2-ctl` is part of the `v4l-utils` package. Install it for better camera detection on Linux.');
+        console.error('  On Debian/Ubuntu: sudo apt-get install v4l-utils');
+        console.error('  On Fedora: sudo dnf install v4l-utils');
+      } else if (e.message) {
+        console.error(`  v4l2-ctl error: ${e.message}`);
+      }
+    }
+    
+    // Fallback to ffmpeg method for Linux
+    result = spawnSync('ffmpeg', ['-f', 'v4l2', '-list_devices', 'true', '-i', 'dummy'], {
+      encoding: 'utf-8'
+    });
+  }
+
+  if (result.error) {
+    if ((result.error as any).code === 'ENOENT') {
+      console.error('❌ FFmpeg not found! Please install it to use the camera stream feature.');
+      console.error('On Debian/Ubuntu: sudo apt-get install ffmpeg');
+      console.error('On Fedora: sudo dnf install ffmpeg');
+      console.error('On Arch Linux: sudo pacman -S ffmpeg');
+      console.error('On macOS (with Homebrew): brew install ffmpeg');
+      console.error('On Windows (with Chocolatey): choco install ffmpeg');
+    } else {
+      console.log('⚠️ Error running ffmpeg:', result.error.message);
+    }
+    return null;
+  }
+  
+  const output = result.stderr || result.stdout || '';
+  
+  console.log('Camera detection output length:', output.length);
+  if (output.length > 0) {
+    console.log('First 500 chars:', output.substring(0, 500));
+  }
+  
+  if (!output) {
+    console.warn('⚠️ No output from ffmpeg detection command');
+    return null;
+  }
+  
+  if (isWindows) {
+    const lines = output.split('\n');
+    console.log(`📋 Parsing ${lines.length} lines of output...`);
+    
+    let fallbackCamera: string | null = null;
+    let fallbackCameraName: string | null = null;
+    
+    for (const line of lines) {
+      if (line.includes('"') && line.includes('(video)')) {
+        console.log(`🎥 Found video line: ${line.trim()}`);
+        const match = line.match(/"([^"]+)"/);
+        if (match) {
+          const cameraName = match[1];
+          console.log(`📹 Detected camera: ${cameraName}`);
+          
+          if (cameraName.toLowerCase().includes('c110') || 
+              cameraName.toLowerCase().includes('logitech')) {
+            detectedCameraName = cameraName;
+            detectedCameraIndex = `video=${detectedCameraName}`;
+            console.log(`🎯 Using Logitech/C110 camera: ${detectedCameraName}`);
+            return detectedCameraIndex;
+          }
+          
+          if (!fallbackCamera && 
+              cameraName.toLowerCase().includes('webcam') && 
+              !cameraName.toLowerCase().includes('hp')) {
+            fallbackCamera = `video=${cameraName}`;
+            fallbackCameraName = cameraName;
+          }
+          
+          if (!fallbackCamera) {
+            fallbackCamera = `video=${cameraName}`;
+            fallbackCameraName = cameraName;
+          }
+        }
+      }
+    }
+    
+    if (fallbackCamera) {
+      detectedCameraIndex = fallbackCamera;
+      detectedCameraName = fallbackCameraName;
+      console.log(`✅ Using fallback video device: ${fallbackCameraName}`);
+      return detectedCameraIndex;
+    }
+    
+    console.warn('⚠️ Could not detect webcam on Windows');
+    return null;
+    
+  } else if (isMac) {
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const logiMatch = line.match(/\[(\d+)\].*(?:Logitech|C110|C920|C922|Webcam)/i);
+      if (logiMatch) {
+        detectedCameraIndex = logiMatch[1];
+        console.log(`✅ Found Logitech webcam at index: ${detectedCameraIndex}`);
+        console.log(`   Device: ${line.trim()}`);
         return detectedCameraIndex;
       }
-      
-      console.warn('⚠️ Could not detect webcam on Windows');
-      return null;
-      
-    } else if (isMac) {
-      // macOS AVFoundation parsing
-      const lines = output.split('\n');
-      for (const line of lines) {
-        // Prioritize Logitech webcam
-        const logiMatch = line.match(/\[(\d+)\].*(?:Logitech|C110|C920|C922|Webcam)/i);
-        if (logiMatch) {
-          detectedCameraIndex = logiMatch[1];
-          console.log(`✅ Found Logitech webcam at index: ${detectedCameraIndex}`);
+    }
+    
+    for (const line of lines) {
+      if (line.includes('[') && line.includes(']') && !line.toLowerCase().includes('facetime')) {
+        const match = line.match(/\[(\d+)\]/);
+        if (match) {
+          detectedCameraIndex = match[1];
+          console.log(`✅ Found external camera at index: ${detectedCameraIndex}`);
           console.log(`   Device: ${line.trim()}`);
           return detectedCameraIndex;
         }
       }
-      
-      // If no Logitech found, look for any external camera (not FaceTime)
-      for (const line of lines) {
-        if (line.includes('[') && line.includes(']') && !line.toLowerCase().includes('facetime')) {
-          const match = line.match(/\[(\d+)\]/);
-          if (match) {
-            detectedCameraIndex = match[1];
-            console.log(`✅ Found external camera at index: ${detectedCameraIndex}`);
-            console.log(`   Device: ${line.trim()}`);
-            return detectedCameraIndex;
-          }
+    }
+    
+    console.warn('⚠️ Could not auto-detect USB webcam, defaulting to index 1');
+    detectedCameraIndex = '1';
+    return detectedCameraIndex;
+    
+  } else { // Linux (ffmpeg fallback)
+    const lines = output.split('\n');
+    const cameraCandidates: { name: string, path: string, priority: number }[] = [];
+
+    console.log(`🐧 Parsing ${lines.length} lines of ffmpeg output for Linux...`);
+    for (const line of lines) {
+      const pathMatch = line.match(/(\/dev\/video\d+)/);
+      if (pathMatch) {
+        const devicePath = pathMatch[1];
+        const nameMatch = line.match(/:\s*(.*)$/);
+        const deviceName = nameMatch ? nameMatch[1].trim() : 'Unknown';
+        
+        let priority = 0;
+        const lowerDeviceName = deviceName.toLowerCase();
+
+        if (lowerDeviceName.includes('c110') || lowerDeviceName.includes('logitech')) {
+          priority = 3;
+        } else if (lowerDeviceName.includes('webcam') && !lowerDeviceName.includes('hp')) {
+          priority = 2;
+        } else if (lowerDeviceName.includes('usb')) {
+          priority = 1;
+        }
+        
+        console.log(`📹 Found device with ffmpeg: ${deviceName} at ${devicePath} (Priority: ${priority})`);
+        if (!cameraCandidates.some(c => c.path === devicePath)) {
+            cameraCandidates.push({ name: deviceName, path: devicePath, priority });
         }
       }
+    }
+
+    if (cameraCandidates.length > 0) {
+      cameraCandidates.sort((a, b) => b.priority - a.priority);
       
-      // Last resort: try index 1 (usually USB on Mac)
-      console.warn('⚠️ Could not auto-detect USB webcam, defaulting to index 1');
-      detectedCameraIndex = '1';
-      return detectedCameraIndex;
+      const bestCandidate = cameraCandidates[0];
+      detectedCameraIndex = bestCandidate.path;
+      detectedCameraName = bestCandidate.name;
       
-    } else {
-      // Linux v4l2 parsing
-      const lines = output.split('\n');
-      for (const line of lines) {
-        if (line.includes('/dev/video')) {
-          const match = line.match(/\/dev\/video(\d+)/);
-          if (match) {
-            detectedCameraIndex = `/dev/video${match[1]}`;
-            console.log(`✅ Found video device: ${detectedCameraIndex}`);
-            return detectedCameraIndex;
-          }
-        }
-      }
-      
-      // Fallback to /dev/video0
-      console.warn('⚠️ Could not auto-detect webcam, defaulting to /dev/video0');
-      detectedCameraIndex = '/dev/video0';
+      console.log(`✅ Selected camera with ffmpeg: ${detectedCameraName} (${detectedCameraIndex})`);
       return detectedCameraIndex;
     }
-  } catch (outerError: unknown) {
-    console.error('❌ Error in detectWebcam:', outerError);
-    return null;
+    
+    console.warn('⚠️ Could not auto-detect webcam with ffmpeg, defaulting to /dev/video2');
+    detectedCameraIndex = '/dev/video2';
+    return detectedCameraIndex;
   }
-  
-  return null;
 }
 
 // Start shared FFmpeg process
@@ -248,7 +325,7 @@ function startSharedFFmpeg() {
       '-f', 'v4l2',
       '-framerate', '30',
       '-video_size', '1024x768',
-      '-i', cameraIndex, // format: "/dev/video0"
+      '-i', cameraIndex, // format: "/dev/video2"
       '-f', 'image2pipe',
       '-vcodec', 'mjpeg',
       '-q:v', '3',
