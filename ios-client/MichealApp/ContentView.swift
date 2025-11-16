@@ -351,7 +351,11 @@ class CanvasView: UIView {
         context.setLineWidth(path.lineWidth / scale); context.setStrokeColor(UIColor(path.color).cgColor)
         let cgPath = CGMutablePath(); cgPath.addLines(between: path.points); context.addPath(cgPath); context.strokePath()
     }
-    private func transformToCanvas() -> CGAffineTransform { return CGAffineTransform.identity.translatedBy(x: -offset.width, y: -offset.height).scaledBy(x: 1 / scale, y: 1 / scale) }
+    private func transformToCanvas() -> CGAffineTransform {
+        // In draw(_:) we do: translate(offset); scale(scale)
+        // The inverse (view -> canvas) is: scale by 1/scale, then translate by -offset
+        return CGAffineTransform(scaleX: 1.0 / max(scale, 0.0001), y: 1.0 / max(scale, 0.0001)).translatedBy(x: -offset.width, y: -offset.height)
+    }
 }
 
 extension Collection where Element == CGPoint {
