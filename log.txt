@@ -1,10 +1,50 @@
-GET /api/debug?test=listFiles 200 in 7ms (compile: 2ms, render: 5ms)
- GET /api/whiteboards 200 in 9ms (compile: 1933µs, render: 7ms)
- GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 8ms (compile: 2ms, render: 6ms)
- GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 8ms (compile: 4ms, render: 4ms)
+jonjon@jonjon:~/micheal$ npm run dev
+
+> file-manager@0.1.0 dev
+> next dev -H 0.0.0.0
+
+ ⚠ Invalid next.config.mjs options detected: 
+ ⚠     Unrecognized key(s) in object: 'swcMinify'
+ ⚠ See more info here: https://nextjs.org/docs/messages/invalid-next-config
+   ▲ Next.js 16.0.1 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://0.0.0.0:3000
+   - Experiments (use with caution):
+     ✓ optimizeCss
+     · optimizePackageImports
+     ✓ scrollRestoration
+
+ ✓ Starting...
+ ✓ Ready in 513ms
+[debug.GET] incoming request {
+  url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
+  headers: {
+    accept: '*/*',
+    'accept-encoding': 'gzip, deflate',
+    'accept-language': 'en-IN,en-GB;q=0.9,en;q=0.8',
+    connection: 'keep-alive',
+    host: '100.72.29.66:3000',
+    'user-agent': 'Micheal (unknown version) CFNetwork/1335.0.3.4 Darwin/21.6.0',
+    'x-forwarded-for': '100.108.175.105',
+    'x-forwarded-host': '100.72.29.66:3000',
+    'x-forwarded-port': '3000',
+    'x-forwarded-proto': 'http'
+  },
+  query: { test: 'listFiles' }
+}
+ GET /api/debug?test=listFiles 200 in 560ms (compile: 530ms, render: 30ms)
+ GET /api/whiteboards 200 in 591ms (compile: 582ms, render: 8ms)
+[download.GET] rangeHeader= null
+[download.GET] rangeHeader= null
+ GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 128ms (compile: 112ms, render: 17ms)
+ GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 132ms (compile: 124ms, render: 8ms)
+[files] using uploads dir: /home/jonjon/micheal/uploads
 [files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
+[files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
+[files.POST] uploadedFiles=["C6214B96-E1DD-4FF6-A6A9-69A06054A519.json"] totalSize=2246 compressed=[]
+ POST /api/files 200 in 706ms (compile: 688ms, render: 18ms)
 [files.POST] uploadedFiles=["6A961C8A-09FA-401A-BB01-DA4BED2E7978.json"] totalSize=2373 compressed=[]
- POST /api/files 200 in 8ms (compile: 1313µs, render: 6ms)
+ POST /api/files 200 in 709ms (compile: 699ms, render: 10ms)
 [files.GET] requested path='' | UPLOAD_DIR='/home/jonjon/micheal/uploads' | fullPath='/home/jonjon/micheal/uploads' | forwardedFor='100.85.195.126' | user-agent='curl/8.7.1'
 [files.GET] request headers: {
   accept: '*/*',
@@ -21,7 +61,67 @@ GET /api/debug?test=listFiles 200 in 7ms (compile: 2ms, render: 5ms)
   'x-forwarded-proto': 'http'
 }
 [files.GET] fullPath exists: true
-[files.GET] fullPath isFile:false isDirectory:true size:4096 mtime:Mon Nov 17 2025 22:36:44 GMT+0530 (India Standard Time)
+[files.GET] fullPath isFile:false isDirectory:true size:4096 mtime:Mon Nov 17 2025 23:13:42 GMT+0530 (India Standard Time)
+[files.GET] resolvedUploadDir='/home/jonjon/micheal/uploads' resolvedFullPath='/home/jonjon/micheal/uploads' relative=''
+[files.GET] raw dir entries for '/home/jonjon/micheal/uploads':
+  - .thumbs (isDirectory=true isFile=false)
+  - Air India Web Booking eTicket TMNYXM - VINEET JONATHAN.pdf (isDirectory=false isFile=true)
+  - Bonafide - new.docx (isDirectory=false isFile=true)
+  - IMG_5535.PNG (isDirectory=false isFile=true)
+  - Screen Recording 2025-10-16 at 11.18.47 AM.mov.zip (isDirectory=false isFile=true)
+  - whiteboards (isDirectory=true isFile=false)
+ GET /api/files 200 in 19ms (compile: 3ms, render: 16ms)
+[debug.GET] incoming request {
+  url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
+  headers: {
+    accept: '*/*',
+    'accept-encoding': 'gzip, deflate',
+    'accept-language': 'en-IN,en;q=0.9',
+    connection: 'keep-alive',
+    host: '100.72.29.66:3000',
+    'user-agent': 'Micheal (unknown version) CFNetwork/3860.100.1 Darwin/25.0.0',
+    'x-forwarded-for': '100.85.195.126',
+    'x-forwarded-host': '100.72.29.66:3000',
+    'x-forwarded-port': '3000',
+    'x-forwarded-proto': 'http'
+  },
+  query: { test: 'listFiles' }
+}
+ GET /api/debug?test=listFiles 200 in 10ms (compile: 4ms, render: 5ms)
+ GET /api/ping 200 in 123ms (compile: 118ms, render: 5ms)
+📱 Client 1 connected. Active subscribers: 1
+🔍 Detecting webcam on linux...
+🐧 Trying v4l2-ctl to detect webcam...
+⚠️ v4l2-ctl not found or failed, falling back to ffmpeg detection.
+  Info: `v4l2-ctl` is part of the `v4l-utils` package. Install it for better camera detection on Linux.
+  On Debian/Ubuntu: sudo apt-get install v4l-utils
+  On Fedora: sudo dnf install v4l-utils
+Camera detection output length: 2109
+First 500 chars: ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
+  built with gcc 13 (Ubuntu 13.2.0-23ubuntu3)
+  configuration: --prefix=/usr --extra-version=3ubuntu5 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping --disable-omx --enable-gnutls --enable-libaom --enable-libass --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libdav1d --enable-libflite --enable-libf
+🐧 Parsing 16 lines of ffmpeg output for Linux...
+⚠️ Could not auto-detect webcam with ffmpeg, defaulting to /dev/video2
+🎥 Starting shared FFmpeg process with camera: /dev/video2...
+ GET /api/camera-stream 200 in 601ms (compile: 149ms, render: 452ms)
+📱 Client 2 connected. Active subscribers: 2
+[files.GET] requested path='' | UPLOAD_DIR='/home/jonjon/micheal/uploads' | fullPath='/home/jonjon/micheal/uploads' | forwardedFor='100.85.195.126' | user-agent='curl/8.7.1'
+[files.GET] request headers: {
+  accept: '*/*',
+  'accept-encoding': 'gzip, deflate',
+  'accept-language': 'en-IN,en;q=0.9',
+  'cache-control': 'no-cache',
+  connection: 'keep-alive',
+  host: '100.72.29.66:3000',
+  pragma: 'no-cache',
+  'user-agent': 'curl/8.7.1',
+  'x-forwarded-for': '100.85.195.126',
+  'x-forwarded-host': '100.72.29.66:3000',
+  'x-forwarded-port': '3000',
+  'x-forwarded-proto': 'http'
+}
+[files.GET] fullPath exists: true
+[files.GET] fullPath isFile:false isDirectory:true size:4096 mtime:Mon Nov 17 2025 23:13:42 GMT+0530 (India Standard Time)
 [files.GET] resolvedUploadDir='/home/jonjon/micheal/uploads' resolvedFullPath='/home/jonjon/micheal/uploads' relative=''
 [debug.GET] incoming request {
   url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
@@ -39,18 +139,18 @@ GET /api/debug?test=listFiles 200 in 7ms (compile: 2ms, render: 5ms)
   },
   query: { test: 'listFiles' }
 }
- GET /api/debug?test=listFiles 200 in 15ms (compile: 7ms, render: 8ms)
+ GET /api/debug?test=listFiles 200 in 13ms (compile: 7ms, render: 6ms)
 [files.GET] raw dir entries for '/home/jonjon/micheal/uploads':
   - .thumbs (isDirectory=true isFile=false)
   - Air India Web Booking eTicket TMNYXM - VINEET JONATHAN.pdf (isDirectory=false isFile=true)
+  - Bonafide - new.docx (isDirectory=false isFile=true)
   - IMG_5535.PNG (isDirectory=false isFile=true)
   - Screen Recording 2025-10-16 at 11.18.47 AM.mov.zip (isDirectory=false isFile=true)
   - whiteboards (isDirectory=true isFile=false)
- GET /api/files 200 in 23ms (compile: 2ms, render: 21ms)
- GET /api/thumbnail?path=IMG_5535.PNG&w=128&h=128 200 in 6ms (compile: 1450µs, render: 5ms)
- GET /api/download?path=IMG_5535.PNG 200 in 3.1s (compile: 1999µs, render: 3.1s)
- GET /api/download?path=Air%20India%20Web%20Booking%20eTicket%20TMNYXM%20-%20VINEET%20JONATHAN.pdf 200 in 135ms (compile: 1542µs, render: 134ms)
- GET /api/thumbnail?path=Screen%20Recording%202025-10-16%20at%2011.18.47%E2%80%AFAM.mov.zip&w=128&h=128 200 in 4ms (compile: 1572µs, render: 2ms)
+ GET /api/files 200 in 25ms (compile: 4ms, render: 22ms)
+ GET /api/thumbnail?path=IMG_5535.PNG&w=128&h=128 200 in 162ms (compile: 150ms, render: 12ms)
+ GET /api/thumbnail?path=Screen%20Recording%202025-10-16%20at%2011.18.47%E2%80%AFAM.mov.zip&w=128&h=128 200 in 6ms (compile: 2ms, render: 4ms)
+🧹 Cleaning up stale connection 1
 [debug.GET] incoming request {
   url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
   headers: {
@@ -67,82 +167,46 @@ GET /api/debug?test=listFiles 200 in 7ms (compile: 2ms, render: 5ms)
   },
   query: { test: 'listFiles' }
 }
- GET /api/debug?test=listFiles 200 in 7ms (compile: 1699µs, render: 5ms)
- GET /api/whiteboards 200 in 9ms (compile: 2ms, render: 7ms)
+ GET /api/debug?test=listFiles 200 in 5ms (compile: 1462µs, render: 4ms)
+ GET /api/whiteboards 200 in 8ms (compile: 4ms, render: 4ms)
+[download.GET] rangeHeader= null
+ GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 8ms (compile: 1943µs, render: 6ms)
+[download.GET] rangeHeader= null
+ GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 5ms (compile: 1643µs, render: 4ms)
+[files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
+[files.POST] uploadedFiles=["6A961C8A-09FA-401A-BB01-DA4BED2E7978.json"] totalSize=2373 compressed=[]
+ POST /api/files 200 in 11ms (compile: 1487µs, render: 9ms)
+[files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
+[files.POST] uploadedFiles=["C6214B96-E1DD-4FF6-A6A9-69A06054A519.json"] totalSize=2246 compressed=[]
+ POST /api/files 200 in 10ms (compile: 3ms, render: 7ms)
+ GET /api/thumbnail?path=Air%20India%20Web%20Booking%20eTicket%20TMNYXM%20-%20VINEET%20JONATHAN.pdf&w=128&h=128 200 in 5ms (compile: 1533µs, render: 3ms)
+[debug.GET] incoming request {
+  url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
+  headers: {
+    accept: '*/*',
+    'accept-encoding': 'gzip, deflate',
+    'accept-language': 'en-IN,en-GB;q=0.9,en;q=0.8',
+    connection: 'keep-alive',
+    host: '100.72.29.66:3000',
+    'user-agent': 'Micheal (unknown version) CFNetwork/1335.0.3.4 Darwin/21.6.0',
+    'x-forwarded-for': '100.108.175.105',
+    'x-forwarded-host': '100.72.29.66:3000',
+    'x-forwarded-port': '3000',
+    'x-forwarded-proto': 'http'
+  },
+  query: { test: 'listFiles' }
+}
+ GET /api/debug?test=listFiles 200 in 7ms (compile: 1738µs, render: 5ms)
+ GET /api/whiteboards 200 in 8ms (compile: 2ms, render: 6ms)
+[download.GET] rangeHeader= null
  GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 8ms (compile: 3ms, render: 5ms)
- GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 6ms (compile: 2ms, render: 4ms)
+[download.GET] rangeHeader= null
+ GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 11ms (compile: 1706µs, render: 9ms)
 [files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
 [files.POST] uploadedFiles=["6A961C8A-09FA-401A-BB01-DA4BED2E7978.json"] totalSize=2373 compressed=[]
- POST /api/files 200 in 15ms (compile: 1303µs, render: 13ms)
-[debug.GET] incoming request {
-  url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
-  headers: {
-    accept: '*/*',
-    'accept-encoding': 'gzip, deflate',
-    'accept-language': 'en-IN,en-GB;q=0.9,en;q=0.8',
-    connection: 'keep-alive',
-    host: '100.72.29.66:3000',
-    'user-agent': 'Micheal (unknown version) CFNetwork/1335.0.3.4 Darwin/21.6.0',
-    'x-forwarded-for': '100.108.175.105',
-    'x-forwarded-host': '100.72.29.66:3000',
-    'x-forwarded-port': '3000',
-    'x-forwarded-proto': 'http'
-  },
-  query: { test: 'listFiles' }
-}
- GET /api/debug?test=listFiles 200 in 8ms (compile: 2ms, render: 6ms)
- GET /api/whiteboards 200 in 9ms (compile: 5ms, render: 5ms)
- GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 6ms (compile: 2ms, render: 4ms)
- GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 5ms (compile: 1145µs, render: 4ms)
+ POST /api/files 200 in 9ms (compile: 1975µs, render: 7ms)
 [files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
-[files.POST] uploadedFiles=["6A961C8A-09FA-401A-BB01-DA4BED2E7978.json"] totalSize=2373 compressed=[]
- POST /api/files 200 in 9ms (compile: 1558µs, render: 8ms)
- GET /api/download?path=Screen%20Recording%202025-10-16%20at%2011.18.47%E2%80%AFAM.mov.zip 200 in 118s (compile: 1420µs, render: 118s)
-[debug.GET] incoming request {
-  url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
-  headers: {
-    accept: '*/*',
-    'accept-encoding': 'gzip, deflate',
-    'accept-language': 'en-IN,en-GB;q=0.9,en;q=0.8',
-    connection: 'keep-alive',
-    host: '100.72.29.66:3000',
-    'user-agent': 'Micheal (unknown version) CFNetwork/1335.0.3.4 Darwin/21.6.0',
-    'x-forwarded-for': '100.108.175.105',
-    'x-forwarded-host': '100.72.29.66:3000',
-    'x-forwarded-port': '3000',
-    'x-forwarded-proto': 'http'
-  },
-  query: { test: 'listFiles' }
-}
- GET /api/debug?test=listFiles 200 in 8ms (compile: 2ms, render: 6ms)
- GET /api/whiteboards 200 in 9ms (compile: 4ms, render: 5ms)
- GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 6ms (compile: 1579µs, render: 4ms)
- GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 10ms (compile: 2ms, render: 8ms)
-[files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
-[files.POST] uploadedFiles=["6A961C8A-09FA-401A-BB01-DA4BED2E7978.json"] totalSize=2373 compressed=[]
- POST /api/files 200 in 7ms (compile: 1452µs, render: 6ms)
-[debug.GET] incoming request {
-  url: 'http://0.0.0.0:3000/api/debug?test=listFiles',
-  headers: {
-    accept: '*/*',
-    'accept-encoding': 'gzip, deflate',
-    'accept-language': 'en-IN,en-GB;q=0.9,en;q=0.8',
-    connection: 'keep-alive',
-    host: '100.72.29.66:3000',
-    'user-agent': 'Micheal (unknown version) CFNetwork/1335.0.3.4 Darwin/21.6.0',
-    'x-forwarded-for': '100.108.175.105',
-    'x-forwarded-host': '100.72.29.66:3000',
-    'x-forwarded-port': '3000',
-    'x-forwarded-proto': 'http'
-  },
-  query: { test: 'listFiles' }
-}
- GET /api/debug?test=listFiles 200 in 8ms (compile: 2ms, render: 5ms)
- GET /api/whiteboards 200 in 11ms (compile: 3ms, render: 8ms)
- GET /api/download?path=whiteboards/6A961C8A-09FA-401A-BB01-DA4BED2E7978.json 200 in 5ms (compile: 1412µs, render: 4ms)
- GET /api/download?path=whiteboards/C6214B96-E1DD-4FF6-A6A9-69A06054A519.json 200 in 9ms (compile: 1341µs, render: 8ms)
-[files.POST] upload requested path='whiteboards' -> uploadPath='/home/jonjon/micheal/uploads/whiteboards'
-[files.POST] uploadedFiles=["6A961C8A-09FA-401A-BB01-DA4BED2E7978.json"] totalSize=2373 compressed=[]
- POST /api/files 200 in 10ms (compile: 1822µs, render: 9ms)
+[files.POST] uploadedFiles=["C6214B96-E1DD-4FF6-A6A9-69A06054A519.json"] totalSize=2246 compressed=[]
+ POST /api/files 200 in 10ms (compile: 1503µs, render: 8ms)
 
 
