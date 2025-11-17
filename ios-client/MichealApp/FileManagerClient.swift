@@ -110,17 +110,12 @@ final class FileManagerClient: NSObject {
                 // Server `modified` may be returned as a string; FileItem expects `modified` as String
                 let respObj = try decoder.decode(FilesResponse.self, from: data)
 
-                // Exclude the whiteboards folder from the cloud storage
-                // listing so the app's Cloud Storage view doesn't surface
-                // that special-purpose directory. Keep directories and
-                // files otherwise intact so the UI can navigate into folders.
-                let filtered = respObj.files.filter { file in
-                    return file.name.lowercased() != "whiteboards"
-                }
-
-                print("FileManagerClient.listFiles: filtered out whiteboards. before=\(respObj.files.count) after=\(filtered.count)")
-
-                completion(.success(filtered))
+                // Return server-provided listing verbatim so the app's
+                // Cloud Storage view mirrors what `curl` and the server
+                // return (including the `whiteboards` directory).
+                let files = respObj.files
+                print("FileManagerClient.listFiles: returning \(files.count) entries (including folders)")
+                completion(.success(files))
             } catch {
                 // If decoding fails, log the raw response to help debugging
                 if let s = String(data: data, encoding: .utf8) {
