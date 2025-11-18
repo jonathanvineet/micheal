@@ -1,12 +1,11 @@
- GET /api/thumbnail?path=France/._040C4539-D1F1-476A-8AC6-61AE6DDA65EB_1_201_a.jpeg&w=128&h=128 200 in 24ms (compile: 6ms, render: 18ms)
- GET /api/thumbnail?path=France/._094AE2C3-85F3-489D-A7A5-4881400800BC_1_201_a.jpeg&w=128&h=128 200 in 25ms (compile: 9ms, render: 16ms)
- GET /api/thumbnail?path=France/._06600384-BC8B-4CFA-9F2E-02CC9A52C79A_1_201_a.jpeg&w=128&h=128 200 in 25ms (compile: 11ms, render: 14ms)
-sharp thumbnail generation failed [Error: Input file contains unsupported image format]
-sharp thumbnail generation failed [Error: Input file contains unsupported image format]
-sharp thumbnail generation failed [Error: Input file contains unsupported image format]
- GET /api/thumbnail?path=France/._049C7F9E-9F74-4285-AFEA-215F97FE60CF_1_201_a.jpeg&w=128&h=128 200 in 20ms (compile: 3ms, render: 17ms)
-sharp thumbnail generation failed [Error: Input file contains unsupported image format]
- GET /api/thumbnail?path=France/._07144DAF-8446-4DDF-8F3E-DA37021D32F5_1_201_a.jpeg&w=128&h=128 200 in 22ms (compile: 3ms, render: 19ms)
- GET /api/thumbnail?path=France/._09B1595D-C697-4CFE-B2A5-F46D794C9CEB_1_201_a.jpeg&w=128&h=128 200 in 22ms (compile: 5ms, render: 17ms)
- GET /api/thumbnail?path=France/._0A25DF63-CC47-4B01-8085-77746149E722_1_201_a.jpeg&w=128&h=128 200 in 16ms (compile: 5ms, render: 11ms)
-sharp thumbnail generation failed
+download.GET] rangeHeader= null
+ GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 112ms (compile: 106ms, render: 6ms)
+[download.GET] rangeHeader= null
+ GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 7ms (compile: 1334µs, render: 5ms)
+[download.GET] rangeHeader= null
+ GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 7ms (compile: 1324µs, render: 6ms)
+[download.GET] rangeHeader= null
+ GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 6ms (compile: 1510µs, render: 5ms)
+sharp thumbnail generation failed [Error: /home/jonjon/micheal/uploads/France/20EF97B9-5F18-4279-9F91-2D6633CD83BE.heic: bad seek to 1797135
+heif: Unsupported feature: Unsupported codec (4.3000)]
+ GET /api/thumbnail?path=France/._223114EC-775A-43F5-90EA-B76219035D1B_1_201_a.jpeg&w=128&h=128 200 in 225ms (compile: 5ms, render: 220ms)
