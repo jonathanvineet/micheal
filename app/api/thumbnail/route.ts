@@ -25,7 +25,12 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const filePath = searchParams.get('path') || '';
-    const fullPath = path.join(UPLOAD_DIR, filePath);
+    // Normalize any path segment that begins with the macOS resource-fork prefix `._`
+    // by stripping the leading `._` so we resolve to the real file name. This
+    // prevents errors when clients pass resource-fork style names.
+    const normalizedSegments = filePath.split('/').map(seg => seg.startsWith('._') ? seg.slice(2) : seg);
+    const normalizedFilePath = normalizedSegments.join('/');
+    const fullPath = path.join(UPLOAD_DIR, normalizedFilePath);
 
     // Security check
     const resolvedUploadDir = path.resolve(UPLOAD_DIR);
@@ -49,10 +54,11 @@ export async function GET(request: NextRequest) {
     const videoExts = ['.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv'];
     const pdfExt = '.pdf';
 
-    // If the filename is a macOS resource-fork / dotfile (starts with "._" or "."),
-    // skip thumbnail generation and return a tiny transparent PNG placeholder.
+    // If the filename is a hidden dotfile (starts with "."), skip thumbnail
+    // generation and return a tiny transparent PNG placeholder. Resource-fork
+    // names that start with `._` have already been normalized above.
     const baseName = path.basename(fullPath);
-    if (baseName.startsWith('._') || baseName.startsWith('.')) {
+    if (baseName.startsWith('.')) {
       const onePixelPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=';
       const buf = Buffer.from(onePixelPngBase64, 'base64');
       return new NextResponse(buf, {
