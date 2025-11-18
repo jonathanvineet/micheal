@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
 
     const ext = path.extname(fullPath).toLowerCase();
     const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
+    const videoExts = ['.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv'];
+    const pdfExt = '.pdf';
 
     // If the filename is a macOS resource-fork / dotfile (starts with "._" or "."),
     // skip thumbnail generation and return a tiny transparent PNG placeholder.
@@ -143,7 +145,49 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // For non-image files return a tiny transparent PNG so client can display
+    // Handle video thumbnails using ffmpeg if available (extract a frame).
+    if (videoExts.includes(ext)) {
+      try {
+        const { spawnSync } = await import('child_process');
+        // Prepare output thumb path (jpg)
+        const outTmp = thumbPath + '.jpg.tmp';
+        const outFinal = thumbPath.replace(/\.[^.]+$/, '.jpg');
+
+        // ffmpeg command: seek to 1s, grab one frame, scale to fit width 320 preserving aspect
+        const args = ['-ss', '1', '-i', fullPath, '-frames:v', '1', '-q:v', '2', '-vf', `scale=min(320\,iw):-2`, outTmp];
+        const res = spawnSync('ffmpeg', args, { stdio: 'ignore' });
+        if (res.status === 0 && fs.existsSync(outTmp)) {
+          fs.renameSync(outTmp, outFinal);
+          const data = fs.readFileSync(outFinal);
+          return new NextResponse(data, { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(data.length), 'Cache-Control': 'public, max-age=86400' } });
+        }
+      } catch (e) {
+        // If ffmpeg missing or fails, fall through to placeholder
+        console.warn('ffmpeg thumbnail generation failed', e);
+      }
+    }
+
+    // Handle PDFs using pdftoppm (poppler) if available
+    if (ext === pdfExt) {
+      try {
+        const { spawnSync } = await import('child_process');
+        const outPrefix = thumbPath + '.pdfthumb';
+        // pdftoppm -jpeg -f 1 -singlefile -scale-to 1024 input.pdf outPrefix
+        const args = ['-jpeg', '-f', '1', '-singlefile', '-scale-to', '1024', fullPath, outPrefix];
+        const res = spawnSync('pdftoppm', args, { stdio: 'ignore' });
+        const produced = outPrefix + '.jpg';
+        if (res.status === 0 && fs.existsSync(produced)) {
+          // move to thumbPath
+          fs.renameSync(produced, thumbPath.replace(/\.[^.]+$/, '.jpg'));
+          const data = fs.readFileSync(thumbPath.replace(/\.[^.]+$/, '.jpg'));
+          return new NextResponse(data, { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(data.length), 'Cache-Control': 'public, max-age=86400' } });
+        }
+      } catch (e) {
+        console.warn('pdftoppm failed', e);
+      }
+    }
+
+    // For other non-image files return a tiny transparent PNG so client can display
     // a lightweight placeholder quickly (client will overlay an icon).
     const onePixelPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=';
     const buf = Buffer.from(onePixelPngBase64, 'base64');
