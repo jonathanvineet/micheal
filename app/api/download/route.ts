@@ -22,8 +22,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'File path is required' }, { status: 400 });
     }
 
-    // Normalize and resolve path to avoid traversal issues
-    const fullPath = path.resolve(UPLOAD_DIR, filePath);
+    // Normalize incoming path segments to strip macOS resource-fork prefix `._`
+    // so requests like `France/._FOO.jpg` map to `France/FOO.jpg`.
+    const normalizedSegments = filePath.split('/').map(seg => seg.startsWith('._') ? seg.slice(2) : seg);
+    const normalizedFilePath = normalizedSegments.join('/');
+    if (normalizedFilePath !== filePath) {
+      console.log('[download.GET] original path=', filePath, 'normalized=', normalizedFilePath);
+    }
+
+    // Resolve and ensure the path is inside the uploads directory
+    const fullPath = path.resolve(UPLOAD_DIR, normalizedFilePath);
 
     // Security check: ensure resolved path is inside UPLOAD_DIR
     const relative = path.relative(UPLOAD_DIR, fullPath);
