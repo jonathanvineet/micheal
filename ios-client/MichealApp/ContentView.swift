@@ -777,19 +777,25 @@ extension Font.Weight {
 struct ContentView: View {
     @State private var showDashboard = true
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Device-specific background image
                 DeviceBackgroundView()
                     .ignoresSafeArea()
-                
-                if showDashboard {
-                    DashboardView(showDashboard: $showDashboard)
-                } else {
-                    FileManagerView(showDashboard: $showDashboard)
+
+                // Main content -- fill the available space. We avoid adding
+                // manual top/bottom safe-area padding here so the content
+                // can occupy the full screen without wasted gaps.
+                VStack(spacing: 0) {
+                    if showDashboard {
+                        DashboardView(showDashboard: $showDashboard)
+                    } else {
+                        FileManagerView(showDashboard: $showDashboard)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -975,27 +981,67 @@ struct DashboardView: View {
                         .padding(.top, 20)
                         
 
-                        // --- Scribble Card (from scribble commit) ---
-                        HStack(spacing: 14) {
+                        // Cloud Storage and Scribble Cards Side by Side
+                        HStack(spacing: 16) {
+                            // Cloud Storage Card
+                            Button(action: { showDashboard = false }) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("CLOUD STORAGE")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white.opacity(0.6))
+                                            .tracking(1.5)
+                                        Spacer()
+                                        Image(systemName: "internaldrive.fill")
+                                            .font(.system(size: 32))
+                                            .foregroundColor(.yellow.opacity(0.8))
+                                    }
+                                    Spacer()
+                                    Image(systemName: "externaldrive.fill.badge.icloud")
+                                        .font(.system(size: 40, weight: .light))
+                                        .foregroundColor(.white.opacity(0.3))
+                                    Spacer()
+                                    Text("Manage Files")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    Text("Tap to expand")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.white.opacity(0.5))
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 24)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color.yellow.opacity(0.15), Color.orange.opacity(0.1)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 24)
+                                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                        )
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+
+                            // Scribble Card
                             ScribbleCard(showWhiteboardCollections: $showWhiteboardCollections)
                         }
                         .frame(height: 180)
                         .padding(.horizontal, 16)
 
-                        // Editable Widget Grid
-                        EditableWidgetGrid(
-                            widgets: $widgets,
-                            isEditMode: $isEditMode,
-                            weather: weather,
-                            storageUsed: storageUsed,
-                            storageTotal: storageTotal,
-                            recentFiles: recentFiles,
-                            todos: $todos,
-                            newTodo: $newTodo,
-                            showTodoInput: $showTodoInput,
-                            columns: horizontalSizeClass == .regular ? 3 : 2
-                        )
-                        .padding(.horizontal, horizontalSizeClass == .regular ? 24 : 16)
+                        // Expandable Camera Feed
+                        ExpandableCameraCard()
+                            .padding(.horizontal, 16)
+
+                        // Things To Do Card
+                        TodoCard(todos: $todos, newTodo: $newTodo, showTodoInput: $showTodoInput)
+                            .frame(height: 300)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 30)
                         
                         // Cloud Storage Button
                         Button(action: { showDashboard = false }) {
@@ -1712,6 +1758,10 @@ struct FileManagerView: View {
                     }
                 }
                 .padding()
+
+                // Make action bar adaptive on compact widths: stack vertically on narrow screens
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
             }
             .sheet(isPresented: $showPicker) {
                 DocumentPicker { urls in
@@ -2090,6 +2140,133 @@ extension FileManagerView {
     }
 }
 
+// MARK: - Expandable Camera Card (simple wrapper providing expand behavior)
+@available(iOS 15.0, *)
+struct ExpandableCameraCard: View {
+    @State private var expanded: Bool = false
+    @State private var showFullscreen: Bool = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Camera")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button(action: { withAnimation { expanded.toggle() } }) {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
+            if expanded {
+                Button(action: { showFullscreen = true }) {
+                    CameraFeedCard()
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.bottom, 6)
+            } else {
+                // Collapsed preview - show small live camera feed
+                CameraFeedCard()
+                    .frame(height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+                    .onTapGesture {
+                        // tapping collapsed view expands it
+                        withAnimation { expanded = true }
+                    }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(white: 0.08))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.06), lineWidth: 1))
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .fullScreenCover(isPresented: $showFullscreen) {
+            FullscreenCameraView(isPresented: $showFullscreen)
+                .edgesIgnoringSafeArea(.all)
+        }
+    }
+}
+
+// MARK: - Fullscreen Camera View with Pinch-to-Zoom
+@available(iOS 15.0, *)
+struct FullscreenCameraView: View {
+    @Binding var isPresented: Bool
+
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            CameraFeedCard()
+                .scaleEffect(scale)
+                .offset(offset)
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { v in
+                            scale = lastScale * v
+                        }
+                        .onEnded { _ in
+                            lastScale = scale
+                            // limit zoom
+                            scale = min(max(1.0, scale), 5.0)
+                            lastScale = scale
+                        }
+                )
+                .gesture(
+                    DragGesture()
+                        .onChanged { g in
+                            offset = CGSize(width: lastOffset.width + g.translation.width, height: lastOffset.height + g.translation.height)
+                        }
+                        .onEnded { _ in
+                            lastOffset = offset
+                        }
+                )
+                .padding()
+
+            HStack(spacing: 12) {
+                Button(action: {
+                    withAnimation {
+                        // reset zoom and offset
+                        scale = 1.0
+                        lastScale = 1.0
+                        offset = .zero
+                        lastOffset = .zero
+                    }
+                }) {
+                    Image(systemName: "arrow.uturn.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .padding(10)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Circle())
+                }
+
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .padding(10)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Circle())
+                }
+            }
+            .padding(20)
+        }
+    }
+}
+
 
 // MARK: - Editable Widget Grid
 @available(iOS 15.0, *)
@@ -2387,46 +2564,49 @@ struct FileGridItem: View {
         @Namespace private var animationNamespace
         
         var body: some View {
-            Button(action: {
-                onTap()
-            }) {
-                VStack {
-                    ZStack {
-                        if item.isDirectory {
-                            Image(systemName: "folder.fill")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(height: 80)
-                                .foregroundColor(.yellow)
-                        } else if let thumb = thumbnail {
-                            Image(uiImage: thumb)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 100, height: 100)
-                                .cornerRadius(8)
-                        } else {
-                            ZStack {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(width: 100, height: 100)
-                                    .cornerRadius(8)
-                                
-                                Image(systemName: iconForFile(item.name))
+            Button(action: { onTap() }) {
+                GeometryReader { geo in
+                    VStack(spacing: 8) {
+                        ZStack {
+                            let thumbSize = min(geo.size.width, geo.size.height * 0.7)
+                            if item.isDirectory {
+                                Image(systemName: "folder.fill")
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(height: 50)
-                                    .foregroundColor(.blue)
+                                    .frame(maxWidth: thumbSize * 0.9, maxHeight: thumbSize * 0.9)
+                                    .foregroundColor(.yellow)
+                            } else if let thumb = thumbnail {
+                                Image(uiImage: thumb)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: thumbSize, height: thumbSize)
+                                    .clipped()
+                                    .cornerRadius(8)
+                            } else {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.12))
+                                    .frame(width: thumbSize, height: thumbSize)
+                                    .cornerRadius(8)
+                                    .overlay(
+                                        Image(systemName: iconForFile(item.name))
+                                            .resizable()
+                                            .scaledToFit()
+                                            .padding(12)
+                                            .foregroundColor(.blue)
+                                    )
                             }
                         }
+                        .frame(maxWidth: .infinity)
+
+                        Text(item.name)
+                            .font(.caption)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(width: 100, height: 100)
-                    
-                    Text(item.name)
-                        .font(.caption)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .frame(height: 30)
+                    .padding(6)
                 }
+                .frame(minHeight: 120)
             }
             .buttonStyle(PlainButtonStyle())
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
