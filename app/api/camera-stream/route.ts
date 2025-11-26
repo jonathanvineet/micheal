@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import * as os from 'os';
 
@@ -10,28 +11,37 @@ let detectedCameraIndex: string | null = null;
 let detectedCameraName: string | null = null;
 
 // Detect OS platform
-const platform = os.platform(); // 'win32', 'darwin', 'linux'
+const platform = os.platform();
 const isWindows = platform === 'win32';
 const isMac = platform === 'darwin';
 const isLinux = platform === 'linux';
 
 // Track active connections with timestamps
-const activeConnections = new Map<number, number>();
+const activeConnections = new Map<number, { lastActivity: number; controller: ReadableStreamDefaultController | null }>();
 let connectionIdCounter = 0;
 
-// Cleanup stale connections every 2 seconds
+// Keep-alive ping interval - send heartbeat frames
+const KEEPALIVE_INTERVAL = 10000; // 10 seconds
+const STALE_THRESHOLD = 35000; // 35 seconds - increased from 30s
+const RECONNECT_GRACE_PERIOD = 5000; // 5 seconds grace before stopping FFmpeg
+
+// Cleanup stale connections every 5 seconds (increased from 2s)
 setInterval(() => {
   const now = Date.now();
-  const staleThreshold = 30000; // 30 seconds
   
-  for (const [id, lastActivity] of activeConnections.entries()) {
-    if (now - lastActivity > staleThreshold) {
+  for (const [id, conn] of activeConnections.entries()) {
+    if (now - conn.lastActivity > STALE_THRESHOLD) {
       console.log(`🧹 Cleaning up stale connection ${id}`);
       activeConnections.delete(id);
       frameSubscribers = Math.max(0, frameSubscribers - 1);
     }
   }
-}, 2000);
+  
+  // If no active connections, schedule FFmpeg stop with grace period
+  if (frameSubscribers === 0 && sharedFFmpegProcess && !restartTimeout) {
+    scheduleFFmpegStop();
+  }
+}, 5000);
 
 // Detect webcam device
 function detectWebcam(): string | null {
@@ -68,7 +78,7 @@ function detectWebcam(): string | null {
           if (lines.length < 2) continue;
 
           const deviceName = lines[0];
-          const devicePathLine = lines.find(l => l.startsWith('/dev/vide2'));
+          const devicePathLine = lines.find(l => l.startsWith('/dev/video'));
 
           if (deviceName && devicePathLine) {
             const match = devicePathLine.match(/(\/dev\/video\d+)/);
@@ -79,11 +89,11 @@ function detectWebcam(): string | null {
               const lowerDeviceName = deviceName.toLowerCase();
 
               if (lowerDeviceName.includes('c110') || lowerDeviceName.includes('logitech')) {
-                priority = 3; // Highest priority
+                priority = 3;
               } else if (lowerDeviceName.includes('webcam') && !lowerDeviceName.includes('hp')) {
-                priority = 2; // Medium priority, avoid integrated HP
+                priority = 2;
               } else if (lowerDeviceName.includes('usb')) {
-                priority = 1; // Low priority for generic USB devices
+                priority = 1;
               }
               
               console.log(`📹 Found device with v4l2-ctl: ${deviceName} at ${devicePath} (Priority: ${priority})`);
@@ -106,41 +116,19 @@ function detectWebcam(): string | null {
       console.log('⚠️ v4l2-ctl did not find a suitable video device, falling back to ffmpeg.');
     } catch (e: any) {
       console.log('⚠️ v4l2-ctl not found or failed, falling back to ffmpeg detection.');
-      if (e.code === 'ENOENT') {
-        console.error('  Info: `v4l2-ctl` is part of the `v4l-utils` package. Install it for better camera detection on Linux.');
-        console.error('  On Debian/Ubuntu: sudo apt-get install v4l-utils');
-        console.error('  On Fedora: sudo dnf install v4l-utils');
-      } else if (e.message) {
-        console.error(`  v4l2-ctl error: ${e.message}`);
-      }
     }
     
-    // Fallback to ffmpeg method for Linux
     result = spawnSync('ffmpeg', ['-f', 'v4l2', '-list_devices', 'true', '-i', 'dummy'], {
       encoding: 'utf-8'
     });
   }
 
   if (result.error) {
-    if ((result.error as any).code === 'ENOENT') {
-      console.error('❌ FFmpeg not found! Please install it to use the camera stream feature.');
-      console.error('On Debian/Ubuntu: sudo apt-get install ffmpeg');
-      console.error('On Fedora: sudo dnf install ffmpeg');
-      console.error('On Arch Linux: sudo pacman -S ffmpeg');
-      console.error('On macOS (with Homebrew): brew install ffmpeg');
-      console.error('On Windows (with Chocolatey): choco install ffmpeg');
-    } else {
-      console.log('⚠️ Error running ffmpeg:', result.error.message);
-    }
+    console.error('❌ FFmpeg not found! Please install it.');
     return null;
   }
   
   const output = result.stderr || result.stdout || '';
-  
-  console.log('Camera detection output length:', output.length);
-  if (output.length > 0) {
-    console.log('First 500 chars:', output.substring(0, 500));
-  }
   
   if (!output) {
     console.warn('⚠️ No output from ffmpeg detection command');
@@ -149,18 +137,14 @@ function detectWebcam(): string | null {
   
   if (isWindows) {
     const lines = output.split('\n');
-    console.log(`📋 Parsing ${lines.length} lines of output...`);
-    
     let fallbackCamera: string | null = null;
     let fallbackCameraName: string | null = null;
     
     for (const line of lines) {
       if (line.includes('"') && line.includes('(video)')) {
-        console.log(`🎥 Found video line: ${line.trim()}`);
         const match = line.match(/"([^"]+)"/);
         if (match) {
           const cameraName = match[1];
-          console.log(`📹 Detected camera: ${cameraName}`);
           
           if (cameraName.toLowerCase().includes('c110') || 
               cameraName.toLowerCase().includes('logitech')) {
@@ -202,7 +186,6 @@ function detectWebcam(): string | null {
       if (logiMatch) {
         detectedCameraIndex = logiMatch[1];
         console.log(`✅ Found Logitech webcam at index: ${detectedCameraIndex}`);
-        console.log(`   Device: ${line.trim()}`);
         return detectedCameraIndex;
       }
     }
@@ -213,7 +196,6 @@ function detectWebcam(): string | null {
         if (match) {
           detectedCameraIndex = match[1];
           console.log(`✅ Found external camera at index: ${detectedCameraIndex}`);
-          console.log(`   Device: ${line.trim()}`);
           return detectedCameraIndex;
         }
       }
@@ -223,11 +205,10 @@ function detectWebcam(): string | null {
     detectedCameraIndex = '1';
     return detectedCameraIndex;
     
-  } else { // Linux (ffmpeg fallback)
+  } else { // Linux
     const lines = output.split('\n');
     const cameraCandidates: { name: string, path: string, priority: number }[] = [];
 
-    console.log(`🐧 Parsing ${lines.length} lines of ffmpeg output for Linux...`);
     for (const line of lines) {
       const pathMatch = line.match(/(\/dev\/video\d+)/);
       if (pathMatch) {
@@ -246,9 +227,8 @@ function detectWebcam(): string | null {
           priority = 1;
         }
         
-        console.log(`📹 Found device with ffmpeg: ${deviceName} at ${devicePath} (Priority: ${priority})`);
         if (!cameraCandidates.some(c => c.path === devicePath)) {
-            cameraCandidates.push({ name: deviceName, path: devicePath, priority });
+          cameraCandidates.push({ name: deviceName, path: devicePath, priority });
         }
       }
     }
@@ -260,11 +240,11 @@ function detectWebcam(): string | null {
       detectedCameraIndex = bestCandidate.path;
       detectedCameraName = bestCandidate.name;
       
-      console.log(`✅ Selected camera with ffmpeg: ${detectedCameraName} (${detectedCameraIndex})`);
+      console.log(`✅ Selected camera: ${detectedCameraName} (${detectedCameraIndex})`);
       return detectedCameraIndex;
     }
     
-    console.warn('⚠️ Could not auto-detect webcam with ffmpeg, defaulting to /dev/video2');
+    console.warn('⚠️ Could not auto-detect webcam, defaulting to /dev/video2');
     detectedCameraIndex = '/dev/video2';
     return detectedCameraIndex;
   }
@@ -272,7 +252,10 @@ function detectWebcam(): string | null {
 
 // Start shared FFmpeg process
 function startSharedFFmpeg() {
-  if (sharedFFmpegProcess) return;
+  if (sharedFFmpegProcess) {
+    console.log('♻️ FFmpeg already running, skipping start');
+    return;
+  }
   
   const cameraIndex = detectWebcam();
   if (cameraIndex === null) {
@@ -285,16 +268,11 @@ function startSharedFFmpeg() {
   let ffmpegArgs: string[];
   
   if (isWindows) {
-    // Windows DirectShow - device name format is critical
-    // Remove 'video=' prefix if present and rebuild with proper format
     let deviceName = cameraIndex;
     if (deviceName.startsWith('video=')) {
-      deviceName = deviceName.substring(6); // Remove 'video=' prefix
+      deviceName = deviceName.substring(6);
     }
     
-    console.log(`🔧 Using device name: "${deviceName}"`);
-    
-    // C110 supports MJPEG at 1024x768 natively - use it directly!
     ffmpegArgs = [
       '-f', 'dshow',
       '-vcodec', 'mjpeg',
@@ -302,30 +280,26 @@ function startSharedFFmpeg() {
       '-framerate', '30',
       '-i', `video=${deviceName}`,
       '-f', 'image2pipe',
-      '-vcodec', 'copy', // Copy MJPEG directly, no re-encoding needed
+      '-vcodec', 'copy',
       '-',
     ];
-    
-    console.log(`📝 FFmpeg command: ffmpeg ${ffmpegArgs.join(' ')}`);
   } else if (isMac) {
-    // macOS AVFoundation
     ffmpegArgs = [
       '-f', 'avfoundation',
       '-framerate', '30',
       '-video_size', '1024x768',
-      '-i', cameraIndex, // format: "0" or "1"
+      '-i', cameraIndex,
       '-f', 'image2pipe',
       '-vcodec', 'mjpeg',
       '-q:v', '3',
       '-',
     ];
   } else {
-    // Linux v4l2
     ffmpegArgs = [
       '-f', 'v4l2',
       '-framerate', '30',
       '-video_size', '1024x768',
-      '-i', cameraIndex, // format: "/dev/video2"
+      '-i', cameraIndex,
       '-f', 'image2pipe',
       '-vcodec', 'mjpeg',
       '-q:v', '3',
@@ -333,7 +307,6 @@ function startSharedFFmpeg() {
     ];
   }
   
-  // Use 1024x768 for Logitech C110 webcam (widely supported by USB webcams)
   sharedFFmpegProcess = spawn('ffmpeg', ffmpegArgs);
 
   let buffer = Buffer.alloc(0);
@@ -343,7 +316,6 @@ function startSharedFFmpeg() {
   sharedFFmpegProcess.stdout?.on('data', (chunk: Buffer) => {
     buffer = Buffer.concat([buffer, chunk]);
 
-    // Extract complete JPEG frames
     while (true) {
       const startIdx = buffer.indexOf(jpegStart);
       if (startIdx === -1) {
@@ -357,7 +329,6 @@ function startSharedFFmpeg() {
         break;
       }
 
-      // Extract and store latest frame
       lastFrame = buffer.slice(startIdx, endIdx + 2);
       buffer = buffer.slice(endIdx + 2);
     }
@@ -365,7 +336,6 @@ function startSharedFFmpeg() {
 
   sharedFFmpegProcess.stderr?.on('data', (data: Buffer) => {
     const msg = data.toString().trim();
-    // Only log actual errors or warnings, not frame stats or empty lines
     if (msg && 
         !msg.includes('frame=') && 
         !msg.includes('fps=') && 
@@ -380,30 +350,33 @@ function startSharedFFmpeg() {
   });
 
   sharedFFmpegProcess.on('exit', (code) => {
-    console.log(`FFmpeg exited with code ${code}`);
+    console.log(`⚠️ FFmpeg exited with code ${code}`);
     sharedFFmpegProcess = null;
     lastFrame = null;
     
-    // Restart if still have subscribers
+    // Auto-restart if still have subscribers
     if (frameSubscribers > 0) {
-      console.log('♻️ Restarting FFmpeg for active subscribers...');
-      setTimeout(startSharedFFmpeg, 1000);
+      console.log('♻️ Auto-restarting FFmpeg for active subscribers...');
+      setTimeout(startSharedFFmpeg, 2000);
     }
   });
+  
+  console.log('✅ FFmpeg started successfully');
 }
 
-// Stop FFmpeg when no subscribers
+// Stop FFmpeg when no subscribers (with grace period)
 function scheduleFFmpegStop() {
   if (restartTimeout) clearTimeout(restartTimeout);
   
   restartTimeout = setTimeout(() => {
     if (frameSubscribers === 0 && sharedFFmpegProcess) {
-      console.log('🛑 No subscribers, stopping FFmpeg...');
+      console.log('🛑 No subscribers for 5s, stopping FFmpeg...');
       sharedFFmpegProcess.kill('SIGTERM');
       sharedFFmpegProcess = null;
       lastFrame = null;
     }
-  }, 5000);
+    restartTimeout = null;
+  }, RECONNECT_GRACE_PERIOD);
 }
 
 export async function GET() {
@@ -412,13 +385,13 @@ export async function GET() {
   
   // Limit maximum concurrent subscribers
   if (frameSubscribers >= 10) {
-    console.warn(`⚠️  Too many subscribers (${frameSubscribers}), rejecting new connection`);
+    console.warn(`⚠️ Too many subscribers (${frameSubscribers}), rejecting new connection`);
     return new Response('Too many connections', { status: 503 });
   }
   
   // Assign unique ID to this connection
   const connectionId = ++connectionIdCounter;
-  activeConnections.set(connectionId, Date.now());
+  activeConnections.set(connectionId, { lastActivity: Date.now(), controller: null });
   
   frameSubscribers++;
   console.log(`📱 Client ${connectionId} connected. Active subscribers: ${frameSubscribers}`);
@@ -432,12 +405,21 @@ export async function GET() {
   // Start FFmpeg if not running
   if (!sharedFFmpegProcess) {
     startSharedFFmpeg();
+    // Wait a bit for FFmpeg to initialize
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   const stream = new ReadableStream({
     async start(controller) {
       let active = true;
       let lastSentFrame: Buffer | null = null;
+      let keepaliveInterval: NodeJS.Timeout | null = null;
+      
+      // Store controller reference for potential cleanup
+      const conn = activeConnections.get(connectionId);
+      if (conn) {
+        conn.controller = controller;
+      }
       
       // Send initial frame immediately if available
       if (lastFrame) {
@@ -447,13 +429,32 @@ export async function GET() {
           controller.enqueue(new Uint8Array(lastFrame));
           controller.enqueue(encoder.encode('\r\n'));
           lastSentFrame = lastFrame;
-          activeConnections.set(connectionId, Date.now()); // Update activity
+          
+          const conn = activeConnections.get(connectionId);
+          if (conn) conn.lastActivity = Date.now();
         } catch (err) {
-          console.error('Error sending initial frame:', err);
+          console.error(`❌ Error sending initial frame to client ${connectionId}:`, err);
+          active = false;
         }
       }
       
-      // Polling loop - read latest frame and send if different
+      // Keep-alive heartbeat - send a comment line periodically
+      keepaliveInterval = setInterval(() => {
+        if (!active) return;
+        
+        try {
+          // Send a small keep-alive comment (not a frame)
+          controller.enqueue(encoder.encode(`--${boundary}\r\n`));
+          
+          const conn = activeConnections.get(connectionId);
+          if (conn) conn.lastActivity = Date.now();
+        } catch {
+          active = false;
+          if (keepaliveInterval) clearInterval(keepaliveInterval);
+        }
+      }, KEEPALIVE_INTERVAL);
+      
+      // Frame sending loop - 20 FPS
       const sendFrames = setInterval(() => {
         if (!active) {
           clearInterval(sendFrames);
@@ -468,19 +469,23 @@ export async function GET() {
             controller.enqueue(new Uint8Array(lastFrame));
             controller.enqueue(encoder.encode('\r\n'));
             lastSentFrame = lastFrame;
-            activeConnections.set(connectionId, Date.now()); // Update activity timestamp
-          } catch {
-            // Client disconnected
+            
+            const conn = activeConnections.get(connectionId);
+            if (conn) conn.lastActivity = Date.now();
+          } catch (err) {
+            console.error(`❌ Client ${connectionId} disconnected during frame send`);
             active = false;
             clearInterval(sendFrames);
           }
         }
-      }, 50); // 20 FPS for better compatibility
+      }, 50); // 20 FPS
 
-      // Store cleanup function
+      // Cleanup function
       const cleanup = () => {
-        if (!active) return; // Already cleaned up
+        if (!active) return;
         active = false;
+        
+        if (keepaliveInterval) clearInterval(keepaliveInterval);
         clearInterval(sendFrames);
         
         // Remove from tracking
@@ -489,15 +494,18 @@ export async function GET() {
           console.log(`👋 Client ${connectionId} disconnected. Active subscribers: ${frameSubscribers}`);
         }
         
-        scheduleFFmpegStop();
+        // Only schedule stop if no more subscribers
+        if (frameSubscribers === 0) {
+          scheduleFFmpegStop();
+        }
       };
 
       // Attach cleanup to controller
-      (controller as { cleanup?: () => void }).cleanup = cleanup;
+      (controller as any).cleanup = cleanup;
     },
 
     cancel() {
-      const ctrl = this as { cleanup?: () => void };
+      const ctrl = this as any;
       if (ctrl.cleanup) ctrl.cleanup();
     }
   });
@@ -509,10 +517,7 @@ export async function GET() {
       'Pragma': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'Keep-Alive': 'timeout=60, max=1000',
     },
   });
 }
-
-
-
-

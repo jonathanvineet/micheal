@@ -981,67 +981,132 @@ struct DashboardView: View {
                         .padding(.top, 20)
                         
 
-                        // Cloud Storage and Scribble Cards Side by Side
-                        HStack(spacing: 16) {
-                            // Cloud Storage Card
-                            Button(action: { showDashboard = false }) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Text("CLOUD STORAGE")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.white.opacity(0.6))
-                                            .tracking(1.5)
-                                        Spacer()
-                                        Image(systemName: "internaldrive.fill")
-                                            .font(.system(size: 32))
-                                            .foregroundColor(.yellow.opacity(0.8))
-                                    }
-                                    Spacer()
-                                    Image(systemName: "externaldrive.fill.badge.icloud")
-                                        .font(.system(size: 40, weight: .light))
-                                        .foregroundColor(.white.opacity(0.3))
-                                    Spacer()
-                                    Text("Manage Files")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                    Text("Tap to expand")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.white.opacity(0.5))
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(20)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 24)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color.yellow.opacity(0.15), Color.orange.opacity(0.1)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .overlay(
+                        // Responsive layout: iPad shows three-column layout (left: Cloud+Scribble stacked,
+                        // middle: camera, right: todo). iPhone stacks these vertically but keeps Cloud+Scribble
+                        // side-by-side for compact rows.
+                        if horizontalSizeClass == .regular {
+                            HStack(alignment: .top, spacing: 16) {
+                                // Left column: Cloud Storage (top) and Scribble (bottom)
+                                VStack(spacing: 16) {
+                                    Button(action: { showDashboard = false }) {
+                                        VStack(alignment: .leading, spacing: 12) {
+                                            HStack {
+                                                Text("CLOUD STORAGE")
+                                                    .font(.system(size: 11, weight: .bold))
+                                                    .foregroundColor(.white.opacity(0.6))
+                                                    .tracking(1.5)
+                                                Spacer()
+                                                Image(systemName: "internaldrive.fill")
+                                                    .font(.system(size: 32))
+                                                    .foregroundColor(.yellow.opacity(0.8))
+                                            }
+                                            Spacer()
+                                            Image(systemName: "externaldrive.fill.badge.icloud")
+                                                .font(.system(size: 40, weight: .light))
+                                                .foregroundColor(.white.opacity(0.3))
+                                            Spacer()
+                                            Text("Manage Files")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(.white.opacity(0.8))
+                                            Text("Tap to expand")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.white.opacity(0.5))
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(20)
+                                        .background(
                                             RoundedRectangle(cornerRadius: 24)
-                                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color.yellow.opacity(0.15), Color.orange.opacity(0.1)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 24)
+                                                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                                                )
                                         )
-                                )
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+
+                                    ScribbleCard(showWhiteboardCollections: $showWhiteboardCollections)
+                                }
+                                .frame(minWidth: 0, maxWidth: .infinity)
+
+                                // Middle: Expandable camera
+                                ExpandableCameraCard()
+                                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: 320)
+
+                                // Right: Todo column
+                                TodoCard(todos: $todos, newTodo: $newTodo, showTodoInput: $showTodoInput)
+                                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300)
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, 16)
+                        } else {
+                            // Compact: stack vertically but keep Cloud+Scribble side-by-side row
+                            HStack(spacing: 16) {
+                                // Cloud Storage Card
+                                Button(action: { showDashboard = false }) {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        HStack {
+                                            Text("CLOUD STORAGE")
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(.white.opacity(0.6))
+                                                .tracking(1.5)
+                                            Spacer()
+                                            Image(systemName: "internaldrive.fill")
+                                                .font(.system(size: 32))
+                                                .foregroundColor(.yellow.opacity(0.8))
+                                        }
+                                        Spacer()
+                                        Image(systemName: "externaldrive.fill.badge.icloud")
+                                            .font(.system(size: 40, weight: .light))
+                                            .foregroundColor(.white.opacity(0.3))
+                                        Spacer()
+                                        Text("Manage Files")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.white.opacity(0.8))
+                                        Text("Tap to expand")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.white.opacity(0.5))
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(20)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 24)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.yellow.opacity(0.15), Color.orange.opacity(0.1)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 24)
+                                                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                                            )
+                                    )
+                                }
+                                .buttonStyle(PlainButtonStyle())
 
-                            // Scribble Card
-                            ScribbleCard(showWhiteboardCollections: $showWhiteboardCollections)
+                                // Scribble Card
+                                ScribbleCard(showWhiteboardCollections: $showWhiteboardCollections)
+                            }
+                            .frame(height: 180)
+                            .padding(.horizontal, 16)
+
+                            // Expandable Camera Feed
+                            ExpandableCameraCard()
+                                .padding(.horizontal, 16)
+
+                            // Things To Do Card
+                            TodoCard(todos: $todos, newTodo: $newTodo, showTodoInput: $showTodoInput)
+                                .frame(height: 300)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 20)
                         }
-                        .frame(height: 180)
-                        .padding(.horizontal, 16)
-
-                        // Expandable Camera Feed
-                        ExpandableCameraCard()
-                            .padding(.horizontal, 16)
-
-                        // Things To Do Card
-                        TodoCard(todos: $todos, newTodo: $newTodo, showTodoInput: $showTodoInput)
-                            .frame(height: 300)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 30)
                         
                         // Cloud Storage Button
                         Button(action: { showDashboard = false }) {
