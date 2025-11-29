@@ -209,34 +209,43 @@ struct ScribbleCard: View {
     }
 }
 
+// MARK: - Enhanced Drawing Models
 struct DrawingPath: Codable, Identifiable, Equatable {
     var id = UUID()
-        var points: [CGPoint] = []
+    var points: [CGPoint] = []
     var color: Color = .white
     var lineWidth: CGFloat = 3.0
+
     enum CodingKeys: String, CodingKey { case id, points, color, lineWidth }
-    init(points: [CGPoint] = [], color: Color = .white, lineWidth: CGFloat = 3.0) { self.points = points; self.color = color; self.lineWidth = lineWidth }
+
+    init(points: [CGPoint] = [], color: Color = .white, lineWidth: CGFloat = 3.0) {
+        self.points = points
+        self.color = color
+        self.lineWidth = lineWidth
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-            // Points may be encoded in different shapes: either as an array of point objects
-            // or as an array of [x,y] coordinate arrays. Try both.
-            if let decodedPoints = try? container.decode([CGPoint].self, forKey: .points) {
-                points = decodedPoints
-            } else if let coordArrays = try? container.decode([[CGFloat]].self, forKey: .points) {
-                points = coordArrays.compactMap { arr in
-                    guard arr.count >= 2 else { return nil }
-                    return CGPoint(x: arr[0], y: arr[1])
-                }
-            } else if let coordArraysD = try? container.decode([[Double]].self, forKey: .points) {
-                points = coordArraysD.compactMap { arr in
-                    guard arr.count >= 2 else { return nil }
-                    return CGPoint(x: CGFloat(arr[0]), y: CGFloat(arr[1]))
-                }
-            } else {
-                points = []
+
+        if let decodedPoints = try? container.decode([CGPoint].self, forKey: .points) {
+            points = decodedPoints
+        } else if let coordArrays = try? container.decode([[CGFloat]].self, forKey: .points) {
+            points = coordArrays.compactMap { arr in
+                guard arr.count >= 2 else { return nil }
+                return CGPoint(x: arr[0], y: arr[1])
             }
+        } else if let coordArraysD = try? container.decode([[Double]].self, forKey: .points) {
+            points = coordArraysD.compactMap { arr in
+                guard arr.count >= 2 else { return nil }
+                return CGPoint(x: CGFloat(arr[0]), y: CGFloat(arr[1]))
+            }
+        } else {
+            points = []
+        }
+
         lineWidth = try container.decode(CGFloat.self, forKey: .lineWidth)
+
         if let colorComponents = try? container.decode([CGFloat].self, forKey: .color) {
             if colorComponents.count == 4 {
                 color = Color(.sRGB, red: colorComponents[0], green: colorComponents[1], blue: colorComponents[2], opacity: colorComponents[3])
@@ -249,16 +258,103 @@ struct DrawingPath: Codable, Identifiable, Equatable {
             color = .white
         }
     }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id); try container.encode(points, forKey: .points); try container.encode(lineWidth, forKey: .lineWidth)
-        let uiColor = UIColor(color); var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        uiColor.getRed(&r, green: &g, blue: &b, alpha: &a); try container.encode([r, g, b, a], forKey: .color)
+        try container.encode(id, forKey: .id)
+        try container.encode(points, forKey: .points)
+        try container.encode(lineWidth, forKey: .lineWidth)
+
+        let uiColor = UIColor(color)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        try container.encode([r, g, b, a], forKey: .color)
+    }
+}
+
+struct PlacedImage: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var imageData: Data
+    var position: CGPoint
+    var scale: CGFloat = 1.0
+    var rotation: Double = 0.0
+
+    static func == (lhs: PlacedImage, rhs: PlacedImage) -> Bool {
+        lhs.id == rhs.id
     }
 }
 
 struct DrawingDocument: Codable, Identifiable, Equatable {
-    var id = UUID(); var name: String; var paths: [DrawingPath] = []; var modifiedAt: Date = Date()
+    var id = UUID()
+    var name: String
+    var paths: [DrawingPath] = []
+    var images: [PlacedImage] = []
+    var modifiedAt: Date = Date()
+    var lastViewTransform: ViewTransform = ViewTransform()
+
+    struct ViewTransform: Codable, Equatable {
+        var scale: CGFloat = 1.0
+        var offset: CGSize = .zero
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, paths, images, modifiedAt, lastViewTransform
+    }
+
+    // Convenience initializer matching older code usage: `DrawingDocument(name:)`
+    init(name: String) {
+        self.id = UUID()
+        self.name = name
+        self.paths = []
+        self.images = []
+        self.modifiedAt = Date()
+        self.lastViewTransform = ViewTransform()
+    }
+
+    // Backwards-compatible decoder: accept documents saved with older shape
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Guard: ensure the JSON contains at least one expected whiteboard key.
+        // Some server error responses (e.g. {"error":"File not found"}) were
+        // previously decoding as empty documents and producing many "Untitled"
+        // entries. Reject such payloads by failing decode when no known keys
+        // are present.
+        let hasAnyKey = container.contains(.id) || container.contains(.name) || container.contains(.paths) || container.contains(.images) || container.contains(.modifiedAt) || container.contains(.lastViewTransform)
+        if !hasAnyKey {
+            let context = DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "JSON does not contain DrawingDocument keys")
+            throw DecodingError.dataCorrupted(context)
+        }
+
+        // id and name are expected
+        id = (try? container.decode(UUID.self, forKey: .id)) ?? UUID()
+        name = (try? container.decode(String.self, forKey: .name)) ?? "Untitled"
+
+        // paths may be missing in very old documents
+        paths = (try? container.decode([DrawingPath].self, forKey: .paths)) ?? []
+
+        // images optional (new in enhanced model)
+        images = (try? container.decode([PlacedImage].self, forKey: .images)) ?? []
+
+        // modifiedAt: support ISO8601 and missing value
+        if let date = try? container.decode(Date.self, forKey: .modifiedAt) {
+            modifiedAt = date
+        } else {
+            modifiedAt = Date()
+        }
+
+        // lastViewTransform optional
+        lastViewTransform = (try? container.decode(ViewTransform.self, forKey: .lastViewTransform)) ?? ViewTransform()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(paths, forKey: .paths)
+        try container.encode(images, forKey: .images)
+        try container.encode(modifiedAt, forKey: .modifiedAt)
+        try container.encode(lastViewTransform, forKey: .lastViewTransform)
+    }
 }
 
 @MainActor
@@ -267,9 +363,13 @@ class DrawingStore: ObservableObject {
     private var documentsURL: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
     // Server folder where whiteboards are stored
     private let serverFolder = "whiteboards"
+    // syncIndex maps document id -> last synced modifiedAt (from server or after successful upload)
+    private var syncIndex: [UUID: Date] = [:]
+    private var syncIndexURL: URL { documentsURL.appendingPathComponent("syncIndex.json") }
 
     init() {
         loadDocuments()
+        loadSyncIndex()
 
         // Start background sync from server (call main-actor-isolated method from async context)
         Task { await self.syncFromServer() }
@@ -291,6 +391,17 @@ class DrawingStore: ObservableObject {
         let fileManager = FileManager.default
         guard let urls = try? fileManager.contentsOfDirectory(at: documentsURL, includingPropertiesForKeys: nil) else { return }
         print("DrawingStore: scanning documents directory: \(documentsURL.path)")
+        // Debug: print a compact listing of files in Documents for troubleshooting repeated Untitled docs
+        do {
+            let docFiles = try fileManager.contentsOfDirectory(at: documentsURL, includingPropertiesForKeys: [.fileSizeKey], options: [])
+            print("DrawingStore: Documents listing (count=\(docFiles.count)):")
+            for f in docFiles {
+                let size = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+                print("  - \(f.lastPathComponent) (size=\(size))")
+            }
+        } catch {
+            print("DrawingStore: failed to list Documents directory for debug: \(error)")
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         self.documents = urls.filter { $0.pathExtension == "json" }.compactMap { url in
@@ -298,17 +409,61 @@ class DrawingStore: ObservableObject {
             guard let data = try? Data(contentsOf: url) else { return nil }
             // Try iso8601 then default
             if let doc = try? decoder.decode(DrawingDocument.self, from: data) {
+                // If the document has the default Untitled name, print raw JSON to help debugging
+                if doc.name == "Untitled" {
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        print("DrawingStore: DEBUG - Untitled document raw JSON (\(url.lastPathComponent)):\n\(jsonString)")
+                    }
+                }
                 return doc
             }
             if let doc = try? JSONDecoder().decode(DrawingDocument.self, from: data) {
+                if doc.name == "Untitled" {
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        print("DrawingStore: DEBUG - Untitled document raw JSON (\(url.lastPathComponent)) [fallback decoder]:\n\(jsonString)")
+                    }
+                }
                 return doc
             }
             return nil
         }.sorted(by: { $0.modifiedAt > $1.modifiedAt })
         print("DrawingStore: loaded \(self.documents.count) documents from disk")
     }
-    func save(document: DrawingDocument, upload: Bool = true) {
-        var docToSave = document; docToSave.modifiedAt = Date()
+    private func loadSyncIndex() {
+        guard FileManager.default.fileExists(atPath: syncIndexURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: syncIndexURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let raw = try decoder.decode([String: Date].self, from: data)
+            var idx: [UUID: Date] = [:]
+            for (k, v) in raw {
+                if let uuid = UUID(uuidString: k) { idx[uuid] = v }
+            }
+            self.syncIndex = idx
+            print("DrawingStore: loaded syncIndex with \(self.syncIndex.count) entries")
+        } catch {
+            print("DrawingStore: failed to load syncIndex: \(error)")
+        }
+    }
+
+    private func saveSyncIndex() {
+        do {
+            var raw: [String: Date] = [:]
+            for (k, v) in syncIndex { raw[k.uuidString] = v }
+            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(raw)
+            try data.write(to: syncIndexURL)
+            print("DrawingStore: saved syncIndex with \(raw.count) entries")
+        } catch {
+            print("DrawingStore: failed to save syncIndex: \(error)")
+        }
+    }
+    func save(document: DrawingDocument, upload: Bool = true, updateModifiedAt: Bool = true) {
+        var docToSave = document
+        if updateModifiedAt {
+            docToSave.modifiedAt = Date()
+        }
         let url = documentsURL.appendingPathComponent("\(docToSave.id).json")
         do {
             let encoder = JSONEncoder()
@@ -327,6 +482,11 @@ class DrawingStore: ObservableObject {
                     switch result {
                     case .success():
                         print("DrawingStore: uploaded whiteboard \(docToSave.id) to server (path: \(self.serverFolder))")
+                        // record that we successfully synced this modifiedAt
+                        DispatchQueue.main.async {
+                            self.syncIndex[docToSave.id] = docToSave.modifiedAt
+                            self.saveSyncIndex()
+                        }
                     case .failure(let err):
                         print("DrawingStore: failed to upload whiteboard to server: \(err)")
                     }
@@ -340,12 +500,55 @@ class DrawingStore: ObservableObject {
         try? FileManager.default.removeItem(at: url)
         documents.removeAll { $0.id == document.id }
 
-        // Attempt to delete on server as well
-        let serverPath = "\(serverFolder)/\(document.id).json"
-        FileManagerClient.shared.deleteFile(at: serverPath) { result in
-            switch result {
-            case .success(): print("Deleted whiteboard on server: \(serverPath)")
-            case .failure(let err): print("Failed to delete whiteboard on server: \(err)")
+        // Create and upload a small tombstone marker to prevent other devices
+        // from re-uploading this document if they haven't seen the deletion yet.
+        let tombstone: [String: Any] = [
+            "id": document.id.uuidString,
+            "deletedAt": ISO8601DateFormatter().string(from: Date())
+        ]
+        let tombName = "\(document.id).deleted.json"
+        let tombURL = documentsURL.appendingPathComponent(tombName)
+        do {
+            let data = try JSONSerialization.data(withJSONObject: tombstone, options: [])
+            try data.write(to: tombURL)
+
+            FileManagerClient.shared.upload(fileURL: tombURL, toPath: serverFolder, progressHandler: nil) { result in
+                switch result {
+                case .success():
+                    print("DrawingStore: uploaded tombstone for deleted doc \(document.id)")
+                    // Attempt to delete the actual json on server as well
+                    let serverPath = "\(self.serverFolder)/\(document.id).json"
+                    FileManagerClient.shared.deleteFile(at: serverPath) { result in
+                        switch result {
+                        case .success():
+                            print("Deleted whiteboard on server: \(serverPath)")
+                            DispatchQueue.main.async {
+                                if self.syncIndex.removeValue(forKey: document.id) != nil { self.saveSyncIndex() }
+                            }
+                        case .failure(let err):
+                            print("Failed to delete whiteboard on server: \(err)")
+                        }
+                    }
+                case .failure(let err):
+                    print("Failed to upload tombstone for deleted doc: \(err)")
+                }
+                // Remove local tombstone file
+                try? FileManager.default.removeItem(at: tombURL)
+            }
+        } catch {
+            print("Failed to create tombstone file: \(error)")
+            // fallback: still attempt server delete
+            let serverPath = "\(serverFolder)/\(document.id).json"
+            FileManagerClient.shared.deleteFile(at: serverPath) { result in
+                switch result {
+                case .success():
+                    print("Deleted whiteboard on server: \(serverPath)")
+                    DispatchQueue.main.async {
+                        if self.syncIndex.removeValue(forKey: document.id) != nil { self.saveSyncIndex() }
+                    }
+                case .failure(let err):
+                    print("Failed to delete whiteboard on server: \(err)")
+                }
             }
         }
     }
@@ -354,6 +557,10 @@ class DrawingStore: ObservableObject {
         let url = documentsURL.appendingPathComponent("\(document.id).json")
         try? FileManager.default.removeItem(at: url)
         documents.removeAll { $0.id == document.id }
+        // Remove any syncIndex entry for this doc
+        if syncIndex.removeValue(forKey: document.id) != nil {
+            saveSyncIndex()
+        }
     }
 
     // MARK: - Sync helpers
@@ -365,20 +572,49 @@ class DrawingStore: ObservableObject {
             case .success(let items):
                 print("DrawingStore: syncFromServer - found \(items.count) items on server at path: \(self.serverFolder)")
                 
-                // --- BEGIN DELETION LOGIC ---
+                // For robust two-way sync: do NOT automatically delete local documents
+                // just because they're missing on the server. Instead, upload any
+                // local-only documents so the server receives the full state (name,
+                // images, paths, lastViewTransform, modifiedAt). This preserves
+                // local work and keeps server and device in sync.
                 let remoteFileNames = Set(items.map { $0.name })
                 DispatchQueue.main.async {
-                    let localDocumentsToDelete = self.documents.filter { doc in
+                    let localDocumentsToUpload = self.documents.filter { doc in
                         let fileName = "\(doc.id).json"
                         return !remoteFileNames.contains(fileName)
                     }
-                    
-                    for docToDelete in localDocumentsToDelete {
-                        print("DrawingStore: deleting local document not present on server: \(docToDelete.id).json")
-                        self.deleteLocally(document: docToDelete)
+
+                    for docToUpload in localDocumentsToUpload {
+                        let localURL = self.documentsURL.appendingPathComponent("\(docToUpload.id).json")
+                        // If we previously synced this doc (it exists in syncIndex) and the
+                        // synced timestamp matches the current modifiedAt, that means the
+                        // server previously had it and now it's missing -> treat as remote deletion
+                        if let lastSynced = self.syncIndex[docToUpload.id], lastSynced == docToUpload.modifiedAt {
+                            print("DrawingStore: remote deleted document previously synced - removing local: \(docToUpload.id).json")
+                            self.deleteLocally(document: docToUpload)
+                            // also clear any syncIndex entry
+                            self.syncIndex.removeValue(forKey: docToUpload.id)
+                            self.saveSyncIndex()
+                            continue
+                        }
+
+                        // Otherwise, this is either a local-only doc (never synced) or
+                        // it has local changes since last sync -> upload it to server.
+                        print("DrawingStore: uploading local-only or changed document to server: \(localURL.lastPathComponent)")
+                        FileManagerClient.shared.upload(fileURL: localURL, toPath: self.serverFolder, progressHandler: nil) { result in
+                            switch result {
+                            case .success():
+                                print("DrawingStore: uploaded local-only whiteboard \(docToUpload.id) to server")
+                                DispatchQueue.main.async {
+                                    self.syncIndex[docToUpload.id] = docToUpload.modifiedAt
+                                    self.saveSyncIndex()
+                                }
+                            case .failure(let err):
+                                print("DrawingStore: failed to upload local-only whiteboard to server: \(err)")
+                            }
+                        }
                     }
                 }
-                // --- END DELETION LOGIC ---
 
                 for item in items where item.name.lowercased().hasSuffix(".json") {
                     print("DrawingStore: remote item: name=\(item.name) path=\(item.path) isDir=\(item.isDirectory)")
@@ -396,18 +632,33 @@ class DrawingStore: ObservableObject {
                                             if rdoc.modifiedAt > self.documents[idx].modifiedAt {
                                                 print("DrawingStore: remote is newer for id=\(rdoc.id) - replacing local")
                                                 self.documents[idx] = rdoc
-                                                self.save(document: rdoc, upload: false)
+                                                self.save(document: rdoc, upload: false, updateModifiedAt: false)
+                                                // record that we've synced this remote state
+                                                self.syncIndex[rdoc.id] = rdoc.modifiedAt
+                                                self.saveSyncIndex()
                                             } else if rdoc.modifiedAt < self.documents[idx].modifiedAt {
                                                 print("DrawingStore: local is newer for id=\(rdoc.id) - uploading local copy")
                                                 let localURL = self.documentsURL.appendingPathComponent("\(self.documents[idx].id).json")
-                                                FileManagerClient.shared.upload(fileURL: localURL, toPath: self.serverFolder, progressHandler: nil) { _ in }
+                                                FileManagerClient.shared.upload(fileURL: localURL, toPath: self.serverFolder, progressHandler: nil) { result in
+                                                    if case .success = result {
+                                                        DispatchQueue.main.async {
+                                                            self.syncIndex[self.documents[idx].id] = self.documents[idx].modifiedAt
+                                                            self.saveSyncIndex()
+                                                        }
+                                                    }
+                                                }
                                             } else {
                                                 print("DrawingStore: remote and local have same modifiedAt for id=\(rdoc.id)")
+                                                // ensure sync index recorded
+                                                self.syncIndex[rdoc.id] = rdoc.modifiedAt
+                                                self.saveSyncIndex()
                                             }
                                         } else {
                                             print("DrawingStore: inserting new remote doc id=\(rdoc.id) name=\(rdoc.name)")
                                             self.documents.insert(rdoc, at: 0)
-                                            self.save(document: rdoc, upload: false)
+                                            self.save(document: rdoc, upload: false, updateModifiedAt: false)
+                                            self.syncIndex[rdoc.id] = rdoc.modifiedAt
+                                            self.saveSyncIndex()
                                         }
                                     }
                                 }
@@ -444,6 +695,37 @@ class DrawingStore: ObservableObject {
                             }
                         case .failure(let err):
                             print("Failed to download remote whiteboard: \(err)")
+                        }
+                    }
+                }
+                // Process tombstone (.deleted.json) files: remove local copies and clear syncIndex
+                for item in items where item.name.lowercased().hasSuffix(".deleted.json") {
+                    print("DrawingStore: found tombstone: \(item.name)")
+                    FileManagerClient.shared.downloadFile(at: item.path) { dlResult in
+                        switch dlResult {
+                        case .success(let localURL):
+                            do {
+                                let data = try Data(contentsOf: localURL)
+                                if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any], let idStr = obj["id"] as? String, let uuid = UUID(uuidString: idStr) {
+                                    DispatchQueue.main.async {
+                                        if let idx = self.documents.firstIndex(where: { $0.id == uuid }) {
+                                            print("DrawingStore: tombstone indicates deletion of local doc \(uuid) - removing locally")
+                                            self.deleteLocally(document: self.documents[idx])
+                                        } else {
+                                            print("DrawingStore: tombstone for \(uuid) - no local doc to remove")
+                                        }
+                                        // remove sync index if present
+                                        if self.syncIndex.removeValue(forKey: uuid) != nil { self.saveSyncIndex() }
+                                    }
+                                }
+                                // attempt to remove the tombstone file from server to avoid reprocessing
+                                FileManagerClient.shared.deleteFile(at: item.path) { _ in }
+                                try? FileManager.default.removeItem(at: localURL)
+                            } catch {
+                                print("Failed to process tombstone file: \(error)")
+                            }
+                        case .failure(let err):
+                            print("Failed to download tombstone: \(err)")
                         }
                     }
                 }
@@ -621,6 +903,7 @@ struct DrawingEditorView: View {
     @Binding var document: DrawingDocument
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject private var store: DrawingStore
+
     @State private var currentPath = DrawingPath()
     @State private var selectedColor: Color = .white
     @State private var selectedLineWidth: CGFloat = 3.0
@@ -628,123 +911,498 @@ struct DrawingEditorView: View {
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+
+    @State private var selectedImageID: UUID?
+    @State private var showImagePicker = false
+
     private let availableColors: [Color] = [.white, .red, .green, .blue, .yellow, .orange, .purple]
 
     var body: some View {
         ZStack {
             Color(red: 0.1, green: 0.1, blue: 0.12).ignoresSafeArea()
-            DrawingCanvas(paths: $document.paths, currentPath: $currentPath, scale: $scale, lastScale: $lastScale, offset: $offset, lastOffset: $lastOffset)
-                .ignoresSafeArea()
-            VStack { editorToolbar; Spacer() }
-        }
-        .navigationTitle(document.name).navigationBarTitleDisplayMode(.inline).navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) { Button(action: { presentationMode.wrappedValue.dismiss() }) { HStack { Image(systemName: "chevron.left"); Text("Back") } } }
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Button(action: resetView) { Image(systemName: "arrow.counterclockwise") }
-                Button(action: undo) { Image(systemName: "arrow.uturn.backward") }.disabled(document.paths.isEmpty)
+
+            DrawingCanvas(
+                paths: $document.paths,
+                images: $document.images,
+                currentPath: $currentPath,
+                scale: $scale,
+                lastScale: $lastScale,
+                offset: $offset,
+                lastOffset: $lastOffset,
+                selectedImageID: $selectedImageID
+            )
+            .ignoresSafeArea()
+
+            VStack {
+                editorToolbar
+                Spacer()
             }
         }
-        .onDisappear { store.save(document: document) }
+        .navigationTitle(document.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    saveViewTransform()
+                    presentationMode.wrappedValue.dismiss()
+                }) {
+                    HStack {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                }
+            }
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button(action: { showImagePicker = true }) { Image(systemName: "photo") }
+                Button(action: resetView) { Image(systemName: "arrow.counterclockwise") }
+                Button(action: undo) { Image(systemName: "arrow.uturn.backward") }
+                .disabled(document.paths.isEmpty && document.images.isEmpty)
+            }
+        }
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker { image in addImage(image) }
+        }
+        .onAppear { restoreViewTransform() }
+        .onDisappear {
+            saveViewTransform()
+            store.save(document: document)
+        }
         .onChange(of: selectedColor) { newColor in currentPath.color = newColor }
         .onChange(of: selectedLineWidth) { newWidth in currentPath.lineWidth = newWidth }
     }
+
     private var editorToolbar: some View {
         VStack(spacing: 12) {
             HStack {
                 ForEach(availableColors, id: \.self) { color in
                     Button(action: { selectedColor = color }) {
-                        Circle().fill(color).frame(width: 30, height: 30)
-                            .overlay(Circle().stroke(Color.white, lineWidth: selectedColor == color ? 2 : 0))
+                        Circle()
+                            .fill(color)
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white, lineWidth: selectedColor == color ? 2 : 0)
+                            )
                     }
                 }
             }
+
             HStack {
-                Image(systemName: "circle.fill").font(.system(size: 8))
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 8))
                 Slider(value: $selectedLineWidth, in: 1...20)
-                Image(systemName: "circle.fill").font(.system(size: 20))
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 20))
             }
-            .foregroundColor(.white).padding(.horizontal)
+            .foregroundColor(.white)
+            .padding(.horizontal)
         }
-        .padding().background(Color.black.opacity(0.5)).cornerRadius(20).padding(.horizontal)
-        .onChange(of: selectedColor) { newColor in currentPath.color = newColor }
-        .onChange(of: selectedLineWidth) { newWidth in currentPath.lineWidth = newWidth }
+        .padding()
+        .background(Color.black.opacity(0.5))
+        .cornerRadius(20)
+        .padding(.horizontal)
     }
-    private func undo() { if !document.paths.isEmpty { document.paths.removeLast() } }
-    private func resetView() { withAnimation { scale = 1.0; lastScale = 1.0; offset = .zero; lastOffset = .zero } }
+
+    private func undo() {
+        if !document.images.isEmpty {
+            document.images.removeLast()
+        } else if !document.paths.isEmpty {
+            document.paths.removeLast()
+        }
+    }
+
+    private func resetView() {
+        withAnimation {
+            scale = 1.0
+            lastScale = 1.0
+            offset = .zero
+            lastOffset = .zero
+        }
+    }
+
+    private func saveViewTransform() {
+        document.lastViewTransform = DrawingDocument.ViewTransform(
+            scale: scale,
+            offset: offset
+        )
+    }
+
+    private func restoreViewTransform() {
+        scale = document.lastViewTransform.scale
+        lastScale = scale
+        offset = document.lastViewTransform.offset
+        lastOffset = offset
+    }
+
+    private func addImage(_ image: UIImage) {
+        guard let imageData = image.jpegData(compressionQuality: 0.8) else { return }
+
+        // Calculate visible center in canvas coordinates
+        let screenCenter = CGPoint(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2)
+        let canvasCenter = screenCenter.transformed(by: transformToCanvas())
+
+        // Smart auto-sizing
+        let maxDimension: CGFloat = 800
+        let imageSize = image.size
+        let scaleFactor = min(1.0, maxDimension / max(imageSize.width, imageSize.height))
+
+        let placedImage = PlacedImage(
+            imageData: imageData,
+            position: canvasCenter,
+            scale: scaleFactor,
+            rotation: 0.0
+        )
+
+        document.images.append(placedImage)
+        selectedImageID = placedImage.id
+    }
+
+    private func transformToCanvas() -> CGAffineTransform {
+        return CGAffineTransform(scaleX: 1.0 / max(scale, 0.0001), y: 1.0 / max(scale, 0.0001))
+            .translatedBy(x: -offset.width, y: -offset.height)
+    }
 }
 
 @available(iOS 15.0, *)
 struct DrawingCanvas: UIViewRepresentable {
-    @Binding var paths: [DrawingPath]; @Binding var currentPath: DrawingPath
-    @Binding var scale: CGFloat; @Binding var lastScale: CGFloat; @Binding var offset: CGSize; @Binding var lastOffset: CGSize
+    @Binding var paths: [DrawingPath]
+    @Binding var images: [PlacedImage]
+    @Binding var currentPath: DrawingPath
+    @Binding var scale: CGFloat
+    @Binding var lastScale: CGFloat
+    @Binding var offset: CGSize
+    @Binding var lastOffset: CGSize
+    @Binding var selectedImageID: UUID?
+
     func makeUIView(context: Context) -> CanvasView {
-        let view = CanvasView(); view.delegate = context.coordinator; view.backgroundColor = .clear; view.isMultipleTouchEnabled = true
-        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:))); pinch.delegate = context.coordinator; view.addGestureRecognizer(pinch)
-        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:))); pan.minimumNumberOfTouches = 2; pan.delegate = context.coordinator; view.addGestureRecognizer(pan)
+        let view = CanvasView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.isMultipleTouchEnabled = true
+
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinch.delegate = context.coordinator
+        view.addGestureRecognizer(pinch)
+
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        pan.minimumNumberOfTouches = 2
+        pan.delegate = context.coordinator
+        view.addGestureRecognizer(pan)
+
+        let rotation = UIRotationGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleRotation(_:)))
+        rotation.delegate = context.coordinator
+        view.addGestureRecognizer(rotation)
+
         return view
     }
-    func updateUIView(_ uiView: CanvasView, context: Context) { uiView.paths = paths; uiView.currentPath = currentPath; uiView.scale = scale; uiView.offset = offset }
+
+    func updateUIView(_ uiView: CanvasView, context: Context) {
+        uiView.paths = paths
+        uiView.images = images
+        uiView.currentPath = currentPath
+        uiView.scale = scale
+        uiView.offset = offset
+        uiView.selectedImageID = selectedImageID
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(self) }
+
     class Coordinator: NSObject, CanvasViewDelegate, UIGestureRecognizerDelegate {
         var parent: DrawingCanvas
+
         init(_ parent: DrawingCanvas) { self.parent = parent }
+
         func didBeginPath(at point: CGPoint) { parent.currentPath.points = [point] }
         func didAppendToPath(at point: CGPoint) { parent.currentPath.points.append(point) }
-        func didEndPath() { if !parent.currentPath.points.isEmpty { parent.paths.append(parent.currentPath); parent.currentPath = DrawingPath(color: parent.currentPath.color, lineWidth: parent.currentPath.lineWidth) } }
-        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-            switch gesture.state {
-            case .began: parent.lastScale = parent.scale
-            case .changed: let newScale = parent.lastScale * gesture.scale; parent.scale = Swift.max(0.2, Swift.min(newScale, 5.0))
-            case .ended, .cancelled: parent.lastScale = 1.0
-            default: break
+        func didEndPath() {
+            if !parent.currentPath.points.isEmpty {
+                parent.paths.append(parent.currentPath)
+                parent.currentPath = DrawingPath(color: parent.currentPath.color, lineWidth: parent.currentPath.lineWidth)
             }
         }
+
+        func didTapOnImage(at point: CGPoint) {
+            for image in parent.images.reversed() {
+                if imageContainsPoint(image: image, point: point) {
+                    parent.selectedImageID = image.id
+                    return
+                }
+            }
+            parent.selectedImageID = nil
+        }
+
+        func didMoveImage(id: UUID, translation: CGSize) {
+            if let index = parent.images.firstIndex(where: { $0.id == id }) {
+                parent.images[index].position.x += translation.width / parent.scale
+                parent.images[index].position.y += translation.height / parent.scale
+            }
+        }
+
+        func didScaleImage(id: UUID, scale: CGFloat) {
+            if let index = parent.images.firstIndex(where: { $0.id == id }) {
+                parent.images[index].scale *= scale
+            }
+        }
+
+        func didRotateImage(id: UUID, rotation: Double) {
+            if let index = parent.images.firstIndex(where: { $0.id == id }) {
+                parent.images[index].rotation += rotation
+            }
+        }
+
+        private func imageContainsPoint(image: PlacedImage, point: CGPoint) -> Bool {
+            guard let uiImage = UIImage(data: image.imageData) else { return false }
+            let size = CGSize(width: uiImage.size.width * image.scale, height: uiImage.size.height * image.scale)
+            let rect = CGRect(x: image.position.x - size.width / 2, y: image.position.y - size.height / 2, width: size.width, height: size.height)
+            return rect.contains(point)
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            if parent.selectedImageID != nil {
+                switch gesture.state {
+                case .began: break
+                case .changed:
+                    if let id = parent.selectedImageID { self.didScaleImage(id: id, scale: gesture.scale); gesture.scale = 1.0 }
+                default: break
+                }
+            } else {
+                switch gesture.state {
+                case .began: parent.lastScale = parent.scale
+                case .changed:
+                    let newScale = parent.lastScale * gesture.scale
+                    parent.scale = Swift.max(0.2, Swift.min(newScale, 5.0))
+                case .ended, .cancelled: parent.lastScale = 1.0
+                default: break
+                }
+            }
+        }
+
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard gesture.numberOfTouches == 2 else { return }
             let translation = gesture.translation(in: gesture.view)
+
+            if parent.selectedImageID != nil {
+                switch gesture.state {
+                case .began: break
+                case .changed:
+                    if let id = parent.selectedImageID { self.didMoveImage(id: id, translation: CGSize(width: translation.x, height: translation.y)); gesture.setTranslation(.zero, in: gesture.view) }
+                default: break
+                }
+                return
+            }
+
+            guard gesture.numberOfTouches == 2 else { return }
             switch gesture.state {
             case .began: parent.lastOffset = parent.offset
             case .changed: parent.offset = CGSize(width: parent.lastOffset.width + translation.x, height: parent.lastOffset.height + translation.y)
             default: break
             }
         }
+
+        @objc func handleRotation(_ gesture: UIRotationGestureRecognizer) {
+            guard let selectedID = parent.selectedImageID else { return }
+
+            switch gesture.state {
+            case .changed:
+                self.didRotateImage(id: selectedID, rotation: Double(gesture.rotation))
+                gesture.rotation = 0
+            default: break
+            }
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { return true }
     }
 }
 
-protocol CanvasViewDelegate: AnyObject { func didBeginPath(at point: CGPoint); func didAppendToPath(at point: CGPoint); func didEndPath() }
+protocol CanvasViewDelegate: AnyObject {
+    func didBeginPath(at point: CGPoint)
+    func didAppendToPath(at point: CGPoint)
+    func didEndPath()
+    func didTapOnImage(at point: CGPoint)
+    func didMoveImage(id: UUID, translation: CGSize)
+    func didScaleImage(id: UUID, scale: CGFloat)
+    func didRotateImage(id: UUID, rotation: Double)
+}
 
 class CanvasView: UIView {
-    weak var delegate: CanvasViewDelegate?; var paths: [DrawingPath] = [] { didSet { setNeedsDisplay() } }; var currentPath: DrawingPath? { didSet { setNeedsDisplay() } }
-    var scale: CGFloat = 1.0 { didSet { setNeedsDisplay() } }; var offset: CGSize = .zero { didSet { setNeedsDisplay() } }; private var isDrawing = false
+    weak var delegate: CanvasViewDelegate?
+    var paths: [DrawingPath] = [] { didSet { setNeedsDisplay() } }
+    var images: [PlacedImage] = [] { didSet { setNeedsDisplay() } }
+    var currentPath: DrawingPath? { didSet { setNeedsDisplay() } }
+    var scale: CGFloat = 1.0 { didSet { setNeedsDisplay() } }
+    var offset: CGSize = .zero { didSet { setNeedsDisplay() } }
+    var selectedImageID: UUID? { didSet { setNeedsDisplay() } }
+
+    private var isDrawing = false
+    private var touchStartTime: Date?
+    private var lastTouchLocation: CGPoint?
+    private var imageDragStart: CGPoint?
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard event?.allTouches?.count == 1, let touch = touches.first else { isDrawing = false; return }
-        isDrawing = true; let point = touch.location(in: self).transformed(by: transformToCanvas()); delegate?.didBeginPath(at: point)
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        let canvasPoint = location.transformed(by: transformToCanvas())
+
+        touchStartTime = Date()
+        lastTouchLocation = location
+
+        // Check if tapping on an image
+        if event?.allTouches?.count == 1 {
+            for image in images.reversed() {
+                if imageContainsPoint(image: image, point: canvasPoint) {
+                    delegate?.didTapOnImage(at: canvasPoint)
+                    if selectedImageID == image.id { imageDragStart = canvasPoint }
+                    return
+                }
+            }
+
+            // Tap outside images - deselect
+            if selectedImageID != nil { delegate?.didTapOnImage(at: canvasPoint); return }
+        }
+
+        // Start drawing if not interacting with image
+        if event?.allTouches?.count == 1 && selectedImageID == nil {
+            isDrawing = true
+            delegate?.didBeginPath(at: canvasPoint)
+        }
     }
+
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard isDrawing, let touch = touches.first else { return }
-        let point = touch.location(in: self).transformed(by: transformToCanvas()); delegate?.didAppendToPath(at: point)
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        let canvasPoint = location.transformed(by: transformToCanvas())
+
+        // Move selected image
+        if let selectedID = selectedImageID, let dragStart = imageDragStart, event?.allTouches?.count == 1 {
+            let translation = CGSize(width: canvasPoint.x - dragStart.x, height: canvasPoint.y - dragStart.y)
+            delegate?.didMoveImage(id: selectedID, translation: translation)
+            imageDragStart = canvasPoint
+            return
+        }
+
+        // Draw
+        if isDrawing { delegate?.didAppendToPath(at: canvasPoint) }
     }
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { guard isDrawing else { return }; isDrawing = false; delegate?.didEndPath() }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { guard isDrawing else { return }; isDrawing = false; delegate?.didEndPath() }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if isDrawing { isDrawing = false; delegate?.didEndPath() }
+        imageDragStart = nil
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if isDrawing { isDrawing = false; delegate?.didEndPath() }
+        imageDragStart = nil
+    }
+
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
-        context.saveGState(); context.translateBy(x: offset.width, y: offset.height); context.scaleBy(x: scale, y: scale)
-        context.setLineCap(.round); context.setLineJoin(.round)
+
+        context.saveGState()
+        context.translateBy(x: offset.width, y: offset.height)
+        context.scaleBy(x: scale, y: scale)
+
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+
+        // Draw images first
+        for image in images { drawImage(image: image, in: context) }
+
+        // Draw paths on top
         for path in paths { draw(path: path, in: context) }
+
         if let currentPath = currentPath, isDrawing { draw(path: currentPath, in: context) }
+
         context.restoreGState()
     }
+
+    private func drawImage(image: PlacedImage, in context: CGContext) {
+        guard let uiImage = UIImage(data: image.imageData) else { return }
+
+        context.saveGState()
+
+        // Move to image position
+        context.translateBy(x: image.position.x, y: image.position.y)
+
+        // Apply rotation
+        context.rotate(by: CGFloat(image.rotation))
+
+        // Apply scale
+        let scaledSize = CGSize(width: uiImage.size.width * image.scale, height: uiImage.size.height * image.scale)
+
+        let rect = CGRect(x: -scaledSize.width / 2, y: -scaledSize.height / 2, width: scaledSize.width, height: scaledSize.height)
+
+        uiImage.draw(in: rect)
+
+        // Draw selection border and handles
+        if selectedImageID == image.id {
+            context.setStrokeColor(UIColor.yellow.cgColor)
+            context.setLineWidth(2.0 / scale)
+            context.stroke(rect)
+
+            let handleSize: CGFloat = 20.0 / scale
+            let corners = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY), CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)]
+            for corner in corners {
+                let handleRect = CGRect(x: corner.x - handleSize / 2, y: corner.y - handleSize / 2, width: handleSize, height: handleSize)
+                context.setFillColor(UIColor.yellow.cgColor)
+                context.fillEllipse(in: handleRect)
+            }
+        }
+
+        context.restoreGState()
+    }
+
     private func draw(path: DrawingPath, in context: CGContext) {
         guard !path.points.isEmpty else { return }
-        context.setLineWidth(path.lineWidth / scale); context.setStrokeColor(UIColor(path.color).cgColor)
-        let cgPath = CGMutablePath(); cgPath.addLines(between: path.points); context.addPath(cgPath); context.strokePath()
+
+        context.setLineWidth(path.lineWidth / scale)
+        context.setStrokeColor(UIColor(path.color).cgColor)
+
+        let cgPath = CGMutablePath()
+        cgPath.addLines(between: path.points)
+        context.addPath(cgPath)
+        context.strokePath()
     }
+
     private func transformToCanvas() -> CGAffineTransform {
-        // In draw(_:) we do: translate(offset); scale(scale)
-        // The inverse (view -> canvas) is: scale by 1/scale, then translate by -offset
-        return CGAffineTransform(scaleX: 1.0 / max(scale, 0.0001), y: 1.0 / max(scale, 0.0001)).translatedBy(x: -offset.width, y: -offset.height)
+        return CGAffineTransform(scaleX: 1.0 / max(scale, 0.0001), y: 1.0 / max(scale, 0.0001))
+            .translatedBy(x: -offset.width, y: -offset.height)
+    }
+
+    private func imageContainsPoint(image: PlacedImage, point: CGPoint) -> Bool {
+        guard let uiImage = UIImage(data: image.imageData) else { return false }
+
+        let size = CGSize(width: uiImage.size.width * image.scale, height: uiImage.size.height * image.scale)
+
+        let rect = CGRect(x: image.position.x - size.width / 2, y: image.position.y - size.height / 2, width: size.width, height: size.height)
+
+        return rect.contains(point)
+    }
+}
+
+// Image picker helper
+@available(iOS 15.0, *)
+struct ImagePicker: UIViewControllerRepresentable {
+    var onPick: (UIImage) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        picker.sourceType = .photoLibrary
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: ImagePicker
+        init(_ parent: ImagePicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage { parent.onPick(image) }
+            picker.dismiss(animated: true)
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { picker.dismiss(animated: true) }
     }
 }
 

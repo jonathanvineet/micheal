@@ -278,6 +278,17 @@ final class FileManagerClient: NSObject {
 
         let task = session.dataTask(with: req) { data, resp, err in
             if let err = err { completion(.failure(err)); return }
+            if let httpResp = resp as? HTTPURLResponse {
+                guard (200...299).contains(httpResp.statusCode) else {
+                    // If server returned error, surface body if available
+                    if let data = data, let s = String(data: data, encoding: .utf8) {
+                        completion(.failure(NSError(domain: "server-delete", code: httpResp.statusCode, userInfo: ["body": s])))
+                    } else {
+                        completion(.failure(NSError(domain: "server-delete", code: httpResp.statusCode)))
+                    }
+                    return
+                }
+            }
             completion(.success(()))
         }
         task.resume()
