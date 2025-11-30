@@ -2057,10 +2057,8 @@ struct CameraFeedCard: View {
                     )
             )
             .onAppear {
-                // Start streaming once when the app/view first appears.
-                if !mjpegStream.isStreaming {
-                    mjpegStream.startStreaming(url: "\(FileManagerClient.shared.baseURL)/api/camera-stream")
-                }
+                // Start (or ensure) streaming when the view appears.
+                mjpegStream.startStreaming(url: "\(FileManagerClient.shared.baseURL)/api/camera-stream")
             }
             .onChange(of: scenePhase) { newPhase in
                 switch newPhase {
@@ -3643,9 +3641,11 @@ struct ImageViewer: View {
         override init() {
             super.init()
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 30 // Reduced to 30 seconds
-            config.timeoutIntervalForResource = 300 // 5 minutes
-            config.httpMaximumConnectionsPerHost = 1
+            // Keep request timeout generous for long-lived MJPEG streams
+            config.timeoutIntervalForRequest = 120 // 2 minutes
+            config.timeoutIntervalForResource = 0 // no resource timeout for long streams
+            // Allow more simultaneous connections to the camera host
+            config.httpMaximumConnectionsPerHost = 10
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.waitsForConnectivity = true
@@ -3653,14 +3653,27 @@ struct ImageViewer: View {
         }
         
         func startStreaming(url: String) {
-            // Don't restart if already streaming to the same URL
-            if isStreaming && dataTask?.currentRequest?.url?.absoluteString == url {
+            // Normalize URL to avoid accidental double-slashes (e.g. baseURL ends with "/")
+            var normalized = url
+            if let range = normalized.range(of: "://") {
+                let prefix = normalized[..<range.upperBound]
+                var remainder = String(normalized[range.upperBound...])
+                // Collapse multiple slashes into single slash in the remainder
+                while remainder.contains("//") { remainder = remainder.replacingOccurrences(of: "//", with: "/") }
+                normalized = prefix + remainder
+            } else {
+                while normalized.contains("//") { normalized = normalized.replacingOccurrences(of: "//", with: "/") }
+            }
+
+            let urlToUse = normalized
+            // Don't restart if already streaming to the same normalized URL
+            if isStreaming, let current = dataTask?.currentRequest?.url?.absoluteString, current == urlToUse {
                 print("MJPEG: Already streaming to this URL, skipping duplicate start")
                 return
             }
             
             // Store the URL for reconnection
-            self.url = url
+            self.url = urlToUse
             
             // Don't retry if we've exceeded max retries
             if retryCount >= maxRetries {
@@ -3675,7 +3688,7 @@ struct ImageViewer: View {
             // Stop any existing stream first
             stopStreaming()
             
-            guard let streamURL = URL(string: url) else {
+            guard let streamURL = URL(string: urlToUse) else {
                 DispatchQueue.main.async {
                     self.errorMessage = "Invalid URL"
                     self.isLoading = false
@@ -3697,6 +3710,8 @@ struct ImageViewer: View {
             request.httpShouldHandleCookies = false
             request.networkServiceType = .video
             request.setValue("keep-alive", forHTTPHeaderField: "Connection")
+            // Match server keep-alive hint to help proxies keep the connection open
+            request.setValue("timeout=60, max=1000", forHTTPHeaderField: "Keep-Alive")
             request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
             
             dataTask = session?.dataTask(with: request)
@@ -3886,12 +3901,28 @@ struct ImageViewer: View {
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             if let error = error {
                 let nsError = error as NSError
-                // Ignore cancellation errors
+                print("MJPEG stream didCompleteWithError: domain=\(nsError.domain) code=\(nsError.code) userInfo=\(nsError.userInfo)")
+
+                // If cancelled, attempt a reconnect only if active and we haven't retried too many times.
                 if nsError.code == NSURLErrorCancelled {
-                    print("MJPEG stream cancelled")
-                    return
+                    print("MJPEG stream cancelled (will attempt reconnect if active)")
+                    if isActive && retryCount < maxRetries {
+                        retryCount += 1
+                        let delay = min(pow(2.0, Double(retryCount)), 10.0)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                            guard let self = self, self.isActive else { return }
+                            if !self.url.isEmpty {
+                                print("MJPEG: Reconnecting after cancellation to: \(self.url) (attempt \(self.retryCount)/\(self.maxRetries))")
+                                self.startStreaming(url: self.url)
+                            }
+                        }
+                        return
+                    } else {
+                        print("MJPEG: Not reconnecting after cancellation - active=\(isActive) retryCount=\(retryCount)")
+                        return
+                    }
                 }
-                
+
                 // Only retry if still active and haven't exceeded max retries
                 guard isActive && retryCount < maxRetries else {
                     DispatchQueue.main.async {
@@ -3901,9 +3932,9 @@ struct ImageViewer: View {
                     }
                     return
                 }
-                
+
                 retryCount += 1
-                
+
                 if nsError.code == NSURLErrorTimedOut {
                     print("MJPEG stream timeout, retrying... (attempt \(retryCount)/\(maxRetries))")
                     DispatchQueue.main.async {
@@ -3918,13 +3949,13 @@ struct ImageViewer: View {
                         self.isStreaming = false
                     }
                 }
-                
+
                 // Exponential backoff: 2s, 4s, 8s...
                 let delay = min(pow(2.0, Double(retryCount)), 10.0)
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                     guard let self = self, self.isActive else { return }
-                    if let url = task.currentRequest?.url?.absoluteString {
-                        self.startStreaming(url: url)
+                    if !self.url.isEmpty {
+                        self.startStreaming(url: self.url)
                     }
                 }
             } else {
