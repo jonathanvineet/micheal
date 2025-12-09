@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9909A164 /* WhiteboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80C46989 /* WhiteboardModels.swift */; };
+		ACF15E89 /* WhiteboardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55E8E385 /* WhiteboardViews.swift */; };
+		86BB0027 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32AFA4D5 /* SharedModels.swift */; };
 		1A000001 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000001 /* App.swift */; };
 		1A000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000002 /* ContentView.swift */; };
 		1A000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A000003 /* Models.swift */; };
@@ -16,6 +19,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		80C46989 /* WhiteboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhiteboardModels.swift; sourceTree = "<group>"; };
+		55E8E385 /* WhiteboardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhiteboardViews.swift; sourceTree = "<group>"; };
+		32AFA4D5 /* SharedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedModels.swift; sourceTree = "<group>"; };
 		2A000001 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		2A000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2A000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -50,6 +56,9 @@
 			children = (
 				2A000001 /* App.swift */,
 				2A000002 /* ContentView.swift */,
+				80C46989 /* WhiteboardModels.swift */,
+				55E8E385 /* WhiteboardViews.swift */,
+				32AFA4D5 /* SharedModels.swift */,
 				2A000003 /* Models.swift */,
 				2A000004 /* FileManagerClient.swift */,
 				2A000005 /* Assets.xcassets */,
@@ -139,6 +148,9 @@
 			files = (
 				1A000001 /* App.swift in Sources */,
 				1A000002 /* ContentView.swift in Sources */,
+				9909A164 /* WhiteboardModels.swift in Sources */,
+				ACF15E89 /* WhiteboardViews.swift in Sources */,
+				86BB0027 /* SharedModels.swift in Sources */,
 				1A000003 /* Models.swift in Sources */,
 				1A000004 /* FileManagerClient.swift in Sources */,
 			);
