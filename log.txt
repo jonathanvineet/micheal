@@ -1,11 +1,42 @@
-download.GET] rangeHeader= null
- GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 112ms (compile: 106ms, render: 6ms)
-[download.GET] rangeHeader= null
- GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 7ms (compile: 1334µs, render: 5ms)
-[download.GET] rangeHeader= null
- GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 7ms (compile: 1324µs, render: 6ms)
-[download.GET] rangeHeader= null
- GET /api/download?path=France/._1D140930-BDE7-4520-A05E-9C1D567D06AC.jpeg 200 in 6ms (compile: 1510µs, render: 5ms)
-sharp thumbnail generation failed [Error: /home/jonjon/micheal/uploads/France/20EF97B9-5F18-4279-9F91-2D6633CD83BE.heic: bad seek to 1797135
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/GYCH0184.HEIC: bad seek to 863881
 heif: Unsupported feature: Unsupported codec (4.3000)]
- GET /api/thumbnail?path=France/._223114EC-775A-43F5-90EA-B76219035D1B_1_201_a.jpeg&w=128&h=128 200 in 225ms (compile: 5ms, render: 220ms)
+ GET /api/thumbnail?path=vj%20phone/GVFI4530.JPG&w=128&h=128 200 in 26ms (compile: 1512µs, render: 25ms)
+ GET /api/thumbnail?path=vj%20phone/FKUI2597.HEIC&w=128&h=128 200 in 1944ms (compile: 1741µs, render: 1942ms)
+ GET /api/thumbnail?path=vj%20phone/GYCH0184.HEIC&w=128&h=128 200 in 1225ms (compile: 1279µs, render: 1224ms)
+ GET /api/thumbnail?path=vj%20phone/GYDM4830.JPG&w=128&h=128 200 in 18ms (compile: 2ms, render: 16ms)
+Sharp thumbnail generation failed: [Error: Input file contains unsupported image format]
+ GET /api/thumbnail?path=vj%20phone/HDVG4521.JPG&w=128&h=128 200 in 54ms (compile: 4ms, render: 50ms)
+ GET /api/thumbnail?path=vj%20phone/HGMQ2773.JPG&w=128&h=128 200 in 55ms (compile: 4ms, render: 52ms)
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/HGEWE9931.JPG: bad seek to 976729
+heif: Unsupported feature: Unsupported codec (4.3000)]
+ GET /api/thumbnail?path=vj%20phone/HGEWE9931.JPG&w=128&h=128 200 in 95ms (compile: 1677µs, render: 94ms)
+Sharp thumbnail generation failed: [Error: Input file contains unsupported image format]
+ GET /api/thumbnail?path=vj%20phone/HIUE7754.JPG&w=128&h=128 200 in 15ms (compile: 1988µs, render: 13ms)
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/IMG_0040.HEIC: bad seek to 1008776
+heif: Unsupported feature: Unsupported codec (4.3000)]
+ GET /api/thumbnail?path=vj%20phone/IMG_0041.JPG&w=128&h=128 200 in 40ms (compile: 1450µs, render: 39ms)
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/IMG_0043.HEIC: bad seek to 1845698
+heif: Unsupported feature: Unsupported codec (4.3000)]
+Sharp thumbnail generation failed: [Error: heif: Unsupported feature: Unsupported codec (4.3000)]
+Sharp thumbnail generation failed: [Error: heif: Unsupported feature: Unsupported codec (4.3000)]
+ GET /api/thumbnail?path=vj%20phone/IMG_0040.HEIC&w=128&h=128 200 in 1011ms (compile: 1141µs, render: 1010ms)
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/IMG_0045.HEIC: bad seek to 1880215
+heif: Unsupported feature: Unsupported codec (4.3000)]
+ GET /api/thumbnail?path=vj%20phone/IMG_0045.HEIC&w=128&h=128 200 in 3.9s (compile: 1739µs, render: 3.9s)
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/IMG_0044.HEIC: bad seek to 2264797
+heif: Unsupported feature: Unsupported codec (4.3000)]
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/IMG_0081.HEIC: bad seek to 1655911
+heif: Unsupported feature: Unsupported codec (4.3000)]
+Sharp thumbnail generation failed: [Error: heif: Unsupported feature: Unsupported codec (4.3000)]
+Sharp thumbnail generation failed: [Error: /home/jonjon/micheal/uploads/vj phone/IMG_0080.HEIC: bad seek to 1767682
+heif: Unsupported feature: Unsupported codec (4.3000)]
+^C GET /api/thumbnail?path=vj%20phone/IMG_0046.HEIC&w=128&h=128 200 in 2.9s (compile: 2ms, render: 2.9s)
+ GET /api/thumbnail?path=vj%20phone/IMG_0080.HEIC&w=128&h=128 200 in 2.7s (compile: 1656µs, render: 2.7s)
+ GET /api/thumbnail?path=vj%20phone/IMG_0036.HEIC&w=128&h=128 200 in 11.5s (compile: 5ms, render: 11.5s)
+ GET /api/thumbnail?path=vj%20phone/IMG_0081.HEIC&w=128&h=128 200 in 2.9s (compile: 5ms, render: 2.9s)
+ GET /api/thumbnail?path=vj%20phone/IMG_0043.HEIC&w=128&h=128 200 in 11.3s (compile: 1782µs, render: 11.3s)
+ GET /api/thumbnail?path=vj%20phone/IMG_0044.HEIC&w=128&h=128 200 in 4.0s (compile: 1664µs, render: 4.0s)
+ GET /api/thumbnail?path=vj%20phone/IMG_0037.HEIC&w=128&h=128 200 in 11.5s (compile: 11ms, render: 11.5s)
+
+
+jonjon@jonjon:~/micheal$ 
