@@ -13,41 +13,63 @@ function resolveUploadsDir(): string {
 
 const UPLOAD_DIR = resolveUploadsDir();
 
+// Performance: Cache whiteboard listings
+const whiteboardCache = { data: null as any, timestamp: 0 };
+const WHITEBOARD_CACHE_TTL = 1000; // 1 second
+
 export async function GET(request: NextRequest) {
   try {
+    // Check cache first
+    if (whiteboardCache.data && Date.now() - whiteboardCache.timestamp < WHITEBOARD_CACHE_TTL) {
+      return NextResponse.json(whiteboardCache.data);
+    }
+
     const whiteboardsDir = path.join(UPLOAD_DIR, 'whiteboards');
 
     if (!fs.existsSync(whiteboardsDir)) {
-      return NextResponse.json({ files: [], currentPath: 'whiteboards', count: 0 });
+      const emptyResult = { files: [], currentPath: 'whiteboards', count: 0 };
+      whiteboardCache.data = emptyResult;
+      whiteboardCache.timestamp = Date.now();
+      return NextResponse.json(emptyResult);
     }
 
     const dirents = await fs.promises.readdir(whiteboardsDir, { withFileTypes: true });
-    const fileNames = dirents.filter(d => d.isFile() && d.name.toLowerCase().endsWith('.json')).map(d => d.name);
+    
+    // Performance: Process in parallel and filter efficiently
+    const jsonFiles = dirents.filter(d => d.isFile() && d.name.endsWith('.json') && !d.name.endsWith('.deleted.json'));
+    
+    const files = await Promise.all(
+      jsonFiles.map(async (dirent) => {
+        try {
+          const fullPath = path.join(whiteboardsDir, dirent.name);
+          const stats = await fs.promises.stat(fullPath);
+          
+          if (stats.size === 0) return null;
 
-    const files = [];
-    for (const name of fileNames) {
-      try {
-        const fullPath = path.join(whiteboardsDir, name);
-        const stats = await fs.promises.stat(fullPath);
-        if (stats.size === 0) {
-          // skip empty files
-          console.warn(`[whiteboards.GET] skipping zero-size file: ${fullPath}`);
-          continue;
+          return {
+            name: dirent.name,
+            isDirectory: false,
+            size: stats.size,
+            modified: stats.mtime,
+            path: `whiteboards/${dirent.name}`,
+          };
+        } catch (err) {
+          return null;
         }
+      })
+    );
 
-        files.push({
-          name,
-          isDirectory: false,
-          size: stats.size,
-          modified: stats.mtime,
-          path: `whiteboards/${name}`,
-        });
-      } catch (err) {
-        console.warn(`[whiteboards.GET] failed to stat ${name}:`, err && err.message ? err.message : err);
-      }
-    }
+    const result = { 
+      files: files.filter(Boolean), 
+      currentPath: 'whiteboards', 
+      count: files.filter(Boolean).length 
+    };
 
-    return NextResponse.json({ files, currentPath: 'whiteboards', count: files.length });
+    // Update cache
+    whiteboardCache.data = result;
+    whiteboardCache.timestamp = Date.now();
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error('whiteboards.GET error:', error);
     return NextResponse.json({ error: 'Failed to list whiteboards' }, { status: 500 });

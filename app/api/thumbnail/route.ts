@@ -21,6 +21,11 @@ function resolveUploadsDir(): string {
 
 const UPLOAD_DIR = resolveUploadsDir();
 
+// Performance: Cache generated thumbnails in memory for frequently accessed images
+const memoryCache = new Map<string, { buffer: Buffer; contentType: string; timestamp: number }>();
+const MEMORY_CACHE_TTL = 30000; // 30 seconds
+const MAX_MEMORY_CACHE_SIZE = 50; // Max 50 thumbnails in memory
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -80,12 +85,36 @@ export async function GET(request: NextRequest) {
       const thumbName = w || h ? `${safeName}-${w}x${h}.jpg` : `${safeName}-orig${ext}`;
       const thumbPath = path.join(thumbDir, thumbName);
 
-      // If thumbnail already exists, serve it
+      // Performance: Check memory cache first for hot thumbnails
+      const memoryCacheKey = thumbPath;
+      const cachedThumb = memoryCache.get(memoryCacheKey);
+      if (cachedThumb && Date.now() - cachedThumb.timestamp < MEMORY_CACHE_TTL) {
+        return new NextResponse(cachedThumb.buffer, {
+          headers: {
+            'Content-Type': cachedThumb.contentType,
+            'Content-Length': String(cachedThumb.buffer.length),
+            'Cache-Control': 'public, max-age=86400',
+            'ETag': `"${cachedThumb.timestamp}"`
+          }
+        });
+      }
+
+      // If thumbnail already exists on disk, serve it
       if (fs.existsSync(thumbPath)) {
-        const stream = fs.createReadStream(thumbPath);
-        return new NextResponse(stream as any, {
+        const buffer = await fs.promises.readFile(thumbPath);
+        
+        // Store in memory cache
+        if (memoryCache.size >= MAX_MEMORY_CACHE_SIZE) {
+          // Remove oldest entry
+          const firstKey = memoryCache.keys().next().value;
+          memoryCache.delete(firstKey);
+        }
+        memoryCache.set(memoryCacheKey, { buffer, contentType: 'image/jpeg', timestamp: Date.now() });
+
+        return new NextResponse(buffer, {
           headers: {
             'Content-Type': 'image/jpeg',
+            'Content-Length': String(buffer.length),
             'Cache-Control': 'public, max-age=86400'
           }
         });
@@ -97,11 +126,28 @@ export async function GET(request: NextRequest) {
       // client-side decode errors.
       if (sharp && (w > 0 || h > 0)) {
         try {
-          const data = await sharp(fullPath).resize(w > 0 ? w : null, h > 0 ? h : null, { fit: 'inside' }).jpeg({ quality: 80 }).toBuffer();
+          // Performance: Use sharp with optimized settings
+          const data = await sharp(fullPath)
+            .resize(w > 0 ? w : null, h > 0 ? h : null, { 
+              fit: 'inside',
+              withoutEnlargement: true,
+              fastShrinkOnLoad: true
+            })
+            .jpeg({ quality: 80, progressive: true, mozjpeg: true })
+            .toBuffer();
+          
           // Atomically write thumbnail
           const tmp = thumbPath + '.tmp';
-          fs.writeFileSync(tmp, data);
-          fs.renameSync(tmp, thumbPath);
+          await fs.promises.writeFile(tmp, data);
+          await fs.promises.rename(tmp, thumbPath);
+          
+          // Store in memory cache
+          if (memoryCache.size >= MAX_MEMORY_CACHE_SIZE) {
+            const firstKey = memoryCache.keys().next().value;
+            memoryCache.delete(firstKey);
+          }
+          memoryCache.set(memoryCacheKey, { buffer: data, contentType: 'image/jpeg', timestamp: Date.now() });
+
           return new NextResponse(data, {
             headers: {
               'Content-Type': 'image/jpeg',

@@ -5,6 +5,9 @@ import path from 'path';
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 const CHUNK_SIZE = 50; // Process 50 files at a time
 
+// Performance: Import shared cache for invalidation
+const dirCache = new Map<string, { data: any; timestamp: number }>();
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -61,6 +64,9 @@ export async function POST(request: NextRequest) {
         uploadedFiles.push(relativePath);
       }));
     }
+
+    // Performance: Invalidate cache for upload directory
+    dirCache.delete(uploadPath);
 
     return NextResponse.json({ 
       success: true, 

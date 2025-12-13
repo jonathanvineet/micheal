@@ -73,14 +73,24 @@ export async function GET(request: NextRequest) {
     // without downloading the entire file. If a Range header is provided,
     // respond with 206 Partial Content and the requested byte range.
     const rangeHeader = request.headers.get('range');
-    console.log('[download.GET] rangeHeader=', rangeHeader);
     const total = stats.size;
+    const lastModified = stats.mtime.toUTCString();
+    const etag = `"${stats.mtimeMs}-${stats.size}"`;
+    
     const headers: Record<string, string> = {
       'Content-Disposition': `inline; filename*=UTF-8''${encodedFileName}`,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=3600'
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Last-Modified': lastModified,
+      'ETag': etag
     };
+
+    // Performance: Support ETag caching
+    const ifNoneMatch = request.headers.get('if-none-match');
+    if (ifNoneMatch === etag) {
+      return new NextResponse(null, { status: 304, headers });
+    }
 
     if (rangeHeader) {
       // Example Range: "bytes=0-"

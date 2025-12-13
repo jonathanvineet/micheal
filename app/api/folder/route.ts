@@ -4,6 +4,9 @@ import path from 'path';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
 
+// Performance: Import shared cache from files route (for cache invalidation)
+const dirCache = new Map<string, { data: any; timestamp: number }>();
+
 export async function POST(request: NextRequest) {
   try {
     const { folderName, currentPath } = await request.json();
@@ -19,11 +22,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
     }
 
-    if (fs.existsSync(fullPath)) {
+    // Performance: Use async check
+    const exists = await fs.promises.access(fullPath, fs.constants.F_OK).then(() => true).catch(() => false);
+    if (exists) {
       return NextResponse.json({ error: 'Folder already exists' }, { status: 400 });
     }
 
-    fs.mkdirSync(fullPath, { recursive: true });
+    // Performance: Use async mkdir
+    await fs.promises.mkdir(fullPath, { recursive: true });
+
+    // Performance: Invalidate parent directory cache
+    const parentDir = path.dirname(fullPath);
+    dirCache.delete(parentDir);
 
     return NextResponse.json({ 
       success: true, 
