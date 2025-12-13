@@ -24,13 +24,13 @@ const UPLOAD_DIR = resolveUploadsDir();
 
 // Performance: Cache generated thumbnails in memory
 const memoryCache = new Map<string, { buffer: Buffer; contentType: string; timestamp: number; etag: string }>();
-const MEMORY_CACHE_TTL = 60000; // 60 seconds (increased from 30s)
-const MAX_MEMORY_CACHE_SIZE = 200; // Increased cache size
+const MEMORY_CACHE_TTL = 60000; // 60 seconds
+const MAX_MEMORY_CACHE_SIZE = 200; // Max 200 thumbnails in memory
 
-// Performance: Prevent duplicate simultaneous thumbnail generation (request deduplication)
+// Performance: Prevent duplicate simultaneous thumbnail generation
 const pendingRequests = new Map<string, Promise<{ buffer: Buffer; contentType: string; etag: string }>>();
 
-// Performance: Limit concurrent thumbnail generation to prevent server overload
+// Performance: Limit concurrent thumbnail generation
 const MAX_CONCURRENT_THUMBNAILS = 3;
 let activeThumbnailGenerations = 0;
 const thumbnailQueue: Array<{ 
@@ -40,7 +40,7 @@ const thumbnailQueue: Array<{
   reject: (reason: Error) => void 
 }> = [];
 
-// Process next item in queue
+// Process queue with concurrency limit
 async function processQueue() {
   if (activeThumbnailGenerations >= MAX_CONCURRENT_THUMBNAILS || thumbnailQueue.length === 0) {
     return;
@@ -59,23 +59,20 @@ async function processQueue() {
   } finally {
     activeThumbnailGenerations--;
     pendingRequests.delete(item.key);
-    // Process next in queue
     setImmediate(() => processQueue());
   }
 }
 
-// Generate thumbnail with queueing
+// Queue thumbnail generation with deduplication
 async function generateThumbnailQueued(
   key: string,
   generator: () => Promise<{ buffer: Buffer; contentType: string; etag: string }>
 ): Promise<{ buffer: Buffer; contentType: string; etag: string }> {
-  // Check if already pending
   const pending = pendingRequests.get(key);
   if (pending) {
     return pending;
   }
   
-  // Create new promise
   const promise = new Promise<{ buffer: Buffer; contentType: string; etag: string }>((resolve, reject) => {
     thumbnailQueue.push({ key, generator, resolve, reject });
     processQueue();
@@ -85,26 +82,68 @@ async function generateThumbnailQueued(
   return promise;
 }
 
-// Generate ETag from file stats
+// Generate ETag
 function generateETag(stats: fs.Stats): string {
   return `"${stats.mtime.getTime()}-${stats.size}"`;
 }
 
-// Generate video thumbnail using ffmpeg
+// Convert HEIC to JPEG using ImageMagick or ffmpeg
+async function convertHeicToJpeg(fullPath: string, outputPath: string): Promise<Buffer | null> {
+  try {
+    const { spawnSync } = await import('child_process');
+    
+    // Try ImageMagick convert first (fastest for HEIC)
+    const args = [
+      `${fullPath}[0]`,      // First image/frame
+      '-resize', '320x320>',
+      '-quality', '80',
+      outputPath
+    ];
+    
+    const res = spawnSync('convert', args, { stdio: 'pipe', timeout: 5000 });
+    
+    if (res.status === 0 && fs.existsSync(outputPath)) {
+      return await fs.promises.readFile(outputPath);
+    }
+    
+    // Fallback to ffmpeg if convert fails
+    const ffmpegArgs = [
+      '-i', fullPath,
+      '-vframes', '1',
+      '-vf', 'scale=\'min(320,iw)\':-2',
+      '-q:v', '2',
+      '-y',
+      outputPath
+    ];
+    
+    const ffmpegRes = spawnSync('ffmpeg', ffmpegArgs, { stdio: 'pipe', timeout: 5000 });
+    
+    if (ffmpegRes.status === 0 && fs.existsSync(outputPath)) {
+      return await fs.promises.readFile(outputPath);
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('HEIC to JPEG conversion failed:', error);
+    return null;
+  }
+}
+
+// Generate video thumbnail
 async function generateVideoThumbnail(fullPath: string, thumbPath: string): Promise<Buffer | null> {
   try {
     const { spawnSync } = await import('child_process');
     const outTmp = thumbPath + '.jpg.tmp';
     const outFinal = thumbPath.replace(/\.[^.]+$/, '.jpg');
 
-    // Improved ffmpeg command: try multiple seek positions if 1s fails
+    // Try 1 second mark first
     const args = [
-      '-ss', '1',           // Seek to 1 second
-      '-i', fullPath,       // Input file
-      '-frames:v', '1',     // Extract 1 frame
-      '-q:v', '2',          // High quality
-      '-vf', 'scale=\'min(320,iw)\':-2', // Scale preserving aspect ratio
-      '-y',                 // Overwrite output
+      '-ss', '1',
+      '-i', fullPath,
+      '-frames:v', '1',
+      '-q:v', '2',
+      '-vf', 'scale=\'min(320,iw)\':-2',
+      '-y',
       outTmp
     ];
     
@@ -115,7 +154,7 @@ async function generateVideoThumbnail(fullPath: string, thumbPath: string): Prom
       return await fs.promises.readFile(outFinal);
     }
     
-    // If 1s seek failed, try at 0s (start of video)
+    // If 1s failed, try start of video
     if (!fs.existsSync(outFinal)) {
       const args2 = [
         '-i', fullPath,
@@ -141,19 +180,18 @@ async function generateVideoThumbnail(fullPath: string, thumbPath: string): Prom
   }
 }
 
-// Generate PDF thumbnail using pdftoppm or ghostscript
+// Generate PDF thumbnail
 async function generatePdfThumbnail(fullPath: string, thumbPath: string): Promise<Buffer | null> {
   try {
     const { spawnSync } = await import('child_process');
     const outPrefix = thumbPath + '.pdfthumb';
-    const outFinal = thumbPath.replace(/\.[^.]+$/, '.jpg');
     
-    // Try pdftoppm first (part of poppler-utils)
+    // Try pdftoppm first
     const args = [
       '-jpeg',
-      '-f', '1',            // First page
+      '-f', '1',
       '-singlefile',
-      '-scale-to', '1024',  // Scale to 1024px
+      '-scale-to', '1024',
       fullPath,
       outPrefix
     ];
@@ -162,11 +200,13 @@ async function generatePdfThumbnail(fullPath: string, thumbPath: string): Promis
     const produced = outPrefix + '.jpg';
     
     if (res.status === 0 && fs.existsSync(produced)) {
+      const outFinal = thumbPath.replace(/\.[^.]+$/, '.jpg');
       await fs.promises.rename(produced, outFinal);
       return await fs.promises.readFile(outFinal);
     }
     
     // Fallback to ghostscript
+    const outFinal = thumbPath.replace(/\.[^.]+$/, '.jpg');
     const gsArgs = [
       '-dNOPAUSE',
       '-dBATCH',
@@ -174,7 +214,7 @@ async function generatePdfThumbnail(fullPath: string, thumbPath: string): Promis
       '-sDEVICE=jpeg',
       '-dFirstPage=1',
       '-dLastPage=1',
-      '-r150',              // 150 DPI
+      '-r150',
       '-dJPEGQ=85',
       `-sOutputFile=${outFinal}`,
       fullPath
@@ -193,13 +233,13 @@ async function generatePdfThumbnail(fullPath: string, thumbPath: string): Promis
   }
 }
 
-// Generate document thumbnail (DOCX, XLSX, etc.) using LibreOffice
+// Generate document thumbnail
 async function generateDocumentThumbnail(fullPath: string, thumbPath: string): Promise<Buffer | null> {
   try {
     const { spawnSync } = await import('child_process');
     const tempDir = path.dirname(thumbPath);
     
-    // Convert to PDF first using LibreOffice
+    // Convert to PDF using LibreOffice
     const args = [
       '--headless',
       '--convert-to', 'pdf',
@@ -209,14 +249,13 @@ async function generateDocumentThumbnail(fullPath: string, thumbPath: string): P
     
     spawnSync('libreoffice', args, { stdio: 'pipe', timeout: 15000 });
     
-    // Check if PDF was created
     const expectedPdf = path.join(tempDir, path.basename(fullPath, path.extname(fullPath)) + '.pdf');
     
     if (fs.existsSync(expectedPdf)) {
-      // Now convert PDF to JPEG
+      // Convert PDF to JPEG
       const pdfBuffer = await generatePdfThumbnail(expectedPdf, thumbPath);
       
-      // Cleanup temp PDF
+      // Cleanup
       try {
         await fs.promises.unlink(expectedPdf);
       } catch {}
@@ -258,10 +297,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Not a file' }, { status: 400 });
     }
 
-    // Generate ETag for caching
     const etag = generateETag(stats);
-    
-    // Check If-None-Match header for 304 Not Modified
     const ifNoneMatch = request.headers.get('if-none-match');
     if (ifNoneMatch === etag) {
       return new NextResponse(null, { status: 304 });
@@ -287,7 +323,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Determine thumbnail type and path
     const w = parseInt(searchParams.get('w') || '', 10) || 0;
     const h = parseInt(searchParams.get('h') || '', 10) || 0;
     
@@ -315,18 +350,16 @@ export async function GET(request: NextRequest) {
     // Check disk cache
     if (fs.existsSync(thumbPath)) {
       const thumbStats = fs.statSync(thumbPath);
-      // Regenerate if source file is newer
       if (thumbStats.mtime >= stats.mtime) {
         const buffer = await fs.promises.readFile(thumbPath);
         
-        // Store in memory cache
         if (memoryCache.size >= MAX_MEMORY_CACHE_SIZE) {
           const firstKey = memoryCache.keys().next().value;
           if (firstKey) memoryCache.delete(firstKey);
         }
         memoryCache.set(memoryCacheKey, { buffer, contentType: 'image/jpeg', timestamp: Date.now(), etag });
 
-        return new NextResponse(buffer, {
+        return new NextResponse(buffer as unknown as BodyInit, {
           headers: {
             'Content-Type': 'image/jpeg',
             'Cache-Control': 'public, max-age=86400',
@@ -343,7 +376,12 @@ export async function GET(request: NextRequest) {
 
       // IMAGE THUMBNAILS
       if (imageExts.includes(ext)) {
-        if (sharp && (w > 0 || h > 0)) {
+        // Special handling for HEIC/HEIF - use ImageMagick/ffmpeg instead of sharp
+        if (['.heic', '.heif'].includes(ext)) {
+          const outPath = thumbPath.replace(/\.[^.]+$/, '.jpg');
+          buffer = await convertHeicToJpeg(fullPath, outPath);
+          contentType = 'image/jpeg';
+        } else if (sharp && (w > 0 || h > 0)) {
           try {
             buffer = await sharp(fullPath)
               .resize(w > 0 ? w : null, h > 0 ? h : null, { 
@@ -354,7 +392,6 @@ export async function GET(request: NextRequest) {
               .jpeg({ quality: 80, progressive: true, mozjpeg: true })
               .toBuffer();
             
-            // Save to disk cache
             if (buffer) {
               const tmp = thumbPath + '.tmp';
               await fs.promises.writeFile(tmp, buffer);
@@ -362,35 +399,36 @@ export async function GET(request: NextRequest) {
             }
           } catch (err) {
             console.error('Sharp thumbnail generation failed:', err);
-            // Fallback to original for HEIC
-            if (['.heic', '.heif'].includes(ext)) {
+            try {
               buffer = await fs.promises.readFile(fullPath);
-              contentType = ext === '.heif' ? 'image/heif' : 'image/heic';
+              contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
+            } catch {
+              // Fallback to placeholder
             }
           }
         } else {
-          // No resize requested or sharp unavailable
-          buffer = await fs.promises.readFile(fullPath);
-          contentType = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
+          try {
+            buffer = await fs.promises.readFile(fullPath);
+            contentType = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/jpeg';
+          } catch {
+            // Fallback to placeholder
+          }
         }
       }
-      
       // VIDEO THUMBNAILS
       else if (videoExts.includes(ext)) {
         buffer = await generateVideoThumbnail(fullPath, thumbPath);
       }
-      
       // PDF THUMBNAILS
       else if (ext === pdfExt) {
         buffer = await generatePdfThumbnail(fullPath, thumbPath);
       }
-      
       // DOCUMENT THUMBNAILS
       else if (docExts.includes(ext)) {
         buffer = await generateDocumentThumbnail(fullPath, thumbPath);
       }
 
-      // Fallback to placeholder if generation failed
+      // Fallback to placeholder
       if (!buffer) {
         const onePixelPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=';
         buffer = Buffer.from(onePixelPngBase64, 'base64');

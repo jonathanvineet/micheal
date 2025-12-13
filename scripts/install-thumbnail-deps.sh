@@ -12,6 +12,9 @@ if ! command -v brew &> /dev/null; then
     exit 1
 fi
 
+echo "📦 Installing ImageMagick (for HEIC/HEIF image conversion)..."
+brew install imagemagick
+
 echo "📦 Installing poppler-utils (for PDF thumbnails - pdftoppm)..."
 brew install poppler
 
@@ -26,12 +29,14 @@ echo "✅ All dependencies installed!"
 echo ""
 echo "Installed tools:"
 echo "  - ffmpeg:      $(which ffmpeg 2>/dev/null || echo 'Not found')"
+echo "  - convert:     $(which convert 2>/dev/null || echo 'Not found')"
 echo "  - pdftoppm:    $(which pdftoppm 2>/dev/null || echo 'Not found')"
 echo "  - gs:          $(which gs 2>/dev/null || echo 'Not found')"
 echo "  - libreoffice: $(which libreoffice 2>/dev/null || echo 'Not found')"
 echo ""
 echo "Your server can now generate thumbnails for:"
-echo "  ✅ Images (JPG, PNG, GIF, WEBP, HEIC, etc.)"
+echo "  ✅ Images (JPG, PNG, GIF, WEBP, BMP, TIFF)"
+echo "  ✅ Apple Images (HEIC, HEIF) - via ImageMagick"
 echo "  ✅ Videos (MP4, MOV, AVI, MKV, WEBM, etc.)"
 echo "  ✅ PDFs"
 echo "  ✅ Documents (DOCX, XLSX, PPTX, etc.)"

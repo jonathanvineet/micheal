@@ -15,14 +15,20 @@ The server has been comprehensively optimized to handle continuous API calls fro
 - ✅ **ETag Support:** Browser/client-side caching with 304 Not Modified responses
 - ✅ **Request Queue:** Maximum 3 concurrent thumbnail generations (prevents server overload)
 
-### 2. **Missing Video Thumbnails**
-**Problem:** Videos (MP4, MOV, AVI, etc.) showed placeholder icons instead of thumbnails.
+### 2. **Missing Video Thumbnails & HEIC Support**
+**Problem:** Videos (MP4, MOV, AVI, etc.) and HEIC/HEIF images showed placeholder icons.
 
-**Solution:**
+**Solution for Videos:**
 - ✅ Improved ffmpeg command with fallback strategies
 - ✅ Tries multiple seek positions (1s, then 0s)
 - ✅ Generates high-quality JPEG thumbnails (320px width)
 - ✅ 5-second timeout to prevent hanging
+
+**Solution for HEIC/HEIF Images:**
+- ✅ **PRIMARY:** Uses ImageMagick `convert` command (fastest)
+- ✅ **FALLBACK:** Uses ffmpeg if convert unavailable
+- ✅ Bypasses Sharp (which lacks HEIF codec support)
+- ✅ Generates JPEG thumbnails at 320x320px
 - ✅ Cached results for instant subsequent loads
 
 ### 3. **Missing PDF Thumbnails**
@@ -77,6 +83,9 @@ This installs:
 If you prefer manual installation:
 
 ```bash
+# Image and video support (HEIC conversion)
+brew install imagemagick
+
 # PDF support
 brew install poppler ghostscript
 
@@ -88,8 +97,13 @@ brew install --cask libreoffice
 
 ### ✅ Images (Always Worked)
 - JPG, JPEG, PNG, GIF, WEBP, BMP, TIFF
-- HEIC, HEIF (Apple formats)
 - Server-side resizing with Sharp
+
+### ✅ HEIC/HEIF Images (NOW WORKING!)
+- Apple iPhone/iPad image formats
+- **Converted to JPEG via ImageMagick or ffmpeg**
+- Responsive thumbnails at 320x320px
+- Instant caching for repeated requests
 
 ### ✅ Videos (NOW WORKING)
 - MP4, MOV, M4V, WEBM
