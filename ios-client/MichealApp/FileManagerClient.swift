@@ -16,89 +16,130 @@ final class FileManagerClient: NSObject {
     
     private var session: URLSession!
     private var uploadProgressHandlers: [Int: (Double) -> Void] = [:]
-    // Thumbnail cache and prefetch controls
+    
+    // MARK: - Caching and Optimization
+    // File listing cache with TTL (20 seconds)
+    private struct CachedListing {
+        let files: [FileItem]
+        let timestamp: Date
+        let etag: String?
+    }
+    private var fileListingCache: [String: CachedListing] = [:]
+    private let listingCacheTTL: TimeInterval = 20
+    private let cacheQueue = DispatchQueue(label: "cache.queue", attributes: .concurrent)
+    
+    // Request deduplication - prevent multiple simultaneous requests
+    private var pendingListRequests: [String: [(Result<[FileItem], Error>) -> Void]] = [:]
+    private let requestQueue = DispatchQueue(label: "request.queue")
+    
+    // ETag cache for conditional requests
+    private var etagCache: [String: String] = [:]
+    
+    // Thumbnail cache and prefetch controls - OPTIMIZED
     private let thumbnailCache = NSCache<NSString, UIImage>()
-    private let thumbnailSemaphore = DispatchSemaphore(value: 4)
+    private let thumbnailSemaphore = DispatchSemaphore(value: 8)
     private let thumbnailQueue = DispatchQueue(label: "thumbnail.queue", attributes: .concurrent)
+    private var pendingThumbnails: [String: [(UIImage?) -> Void]] = [:]
+    private let thumbnailLock = NSLock()
     
     private override init() {
         super.init()
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 300
-        // Allow more concurrent connections to the server for faster parallel downloads (thumbnails/files)
-        config.httpMaximumConnectionsPerHost = 8
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 180
+        config.httpMaximumConnectionsPerHost = 16
+        config.requestCachePolicy = .useProtocolCachePolicy
+        config.urlCache = URLCache(memoryCapacity: 50_000_000, diskCapacity: 200_000_000)
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        
+        // Configure thumbnail cache limits
+        thumbnailCache.countLimit = 500
+        thumbnailCache.totalCostLimit = 100_000_000
     }
     
-    // List files in a directory
-    func listFiles(path: String = "", completion: @escaping (Result<[FileItem], Error>) -> Void) {
-        // Fire a debug ping so server logs headers for this client — useful to correlate requests
-        pingDebug(test: "listFiles")
+    // List files - OPTIMIZED with caching
+    func listFiles(path: String = "", forceRefresh: Bool = false, completion: @escaping (Result<[FileItem], Error>) -> Void) {
+        let cacheKey = path
+        
+        // Check cache first
+        if !forceRefresh {
+            cacheQueue.sync {
+                if let cached = fileListingCache[cacheKey] {
+                    let age = Date().timeIntervalSince(cached.timestamp)
+                    if age < listingCacheTTL {
+                        DispatchQueue.main.async {
+                            completion(.success(cached.files))
+                        }
+                        return
+                    }
+                }
+            }
+        }
+        
+        // Check if request in flight
+        requestQueue.sync {
+            if pendingListRequests[cacheKey] != nil {
+                pendingListRequests[cacheKey]?.append(completion)
+                return
+            }
+            pendingListRequests[cacheKey] = [completion]
+        }
 
-        // Build URL explicitly (scheme/host/port/path) to mimic curl formatting
-        guard let baseURL = URL(string: SERVER_BASE_URL) else { return }
+        // Build URL
+        guard let baseURL = URL(string: SERVER_BASE_URL) else {
+            notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "invalid-url", code: -1)))
+            return
+        }
         var components = URLComponents()
         components.scheme = baseURL.scheme
         components.host = baseURL.host
         components.port = baseURL.port
-        // Ensure we don't accidentally include duplicate slashes
         let basePath = baseURL.path.isEmpty ? "" : baseURL.path
-        // If requesting the whiteboards folder, use the focused endpoint which
-        // returns only whiteboard JSON files and skips transient zero-byte files.
+        
         if path == "whiteboards" {
             components.path = (basePath as NSString).appendingPathComponent("api/whiteboards")
         } else {
             components.path = (basePath as NSString).appendingPathComponent("api/files")
-            // Only include the `path` query parameter when a non-empty path
-            // is requested. Some server implementations treat an empty
-            // `path=` differently than omitting the parameter — omitting
-            // it yields the expected root/cloud listing.
             if !path.isEmpty {
                 components.queryItems = [URLQueryItem(name: "path", value: path)]
             }
         }
-        guard let url = components.url else { return }
-
-        var req = URLRequest(url: url)
-        // Always request a fresh listing from the server — the server
-        // currently sets very long cache lifetimes which can cause the
-        // app to show stale results after an upload. Force reload and
-        // add no-cache headers to bypass URLSession/local caches.
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        // Make request headers similar to curl to avoid different routing by intermediaries
-        req.setValue("*/*", forHTTPHeaderField: "Accept")
-        // Some intermediaries or proxies route differently based on User-Agent — mimic curl for testing
-        req.setValue("curl/8.7.1", forHTTPHeaderField: "User-Agent")
-        // Optionally set Host header to exactly match curl's Host (helps if a proxy cares)
-        if let host = baseURL.host, let port = baseURL.port {
-            req.setValue("\(host):\(port)", forHTTPHeaderField: "Host")
-        } else if let host = baseURL.host {
-            req.setValue(host, forHTTPHeaderField: "Host")
+        guard let url = components.url else {
+            notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "invalid-url", code: -1)))
+            return
         }
 
-        print("FileManagerClient.listFiles: sending request to URL=\(url.absoluteString) headers=\(req.allHTTPHeaderFields ?? [:])")
+        var req = URLRequest(url: url)
+        req.cachePolicy = .returnCacheDataElseLoad
+        req.setValue("*/*", forHTTPHeaderField: "Accept")
+        
+        if let etag = etagCache[cacheKey] {
+            req.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
 
-        let task = session.dataTask(with: req) { data, resp, err in
-            if let err = err { completion(.failure(err)); return }
-            guard let data = data else { completion(.failure(NSError(domain: "no-data", code: -1))); return }
-
-            // Log HTTP status and headers for debugging network issues
-            if let httpResp = resp as? HTTPURLResponse {
-                print("FileManagerClient.listFiles: URL=\(url.absoluteString) returned status=\(httpResp.statusCode)")
-                print("FileManagerClient.listFiles: headers=\(httpResp.allHeaderFields)")
-            } else {
-                print("FileManagerClient.listFiles: no HTTPURLResponse for URL=\(url.absoluteString)")
+        let task = session.dataTask(with: req) { [weak self] data, resp, err in
+            guard let self = self else { return }
+            
+            if let err = err {
+                self.notifyListRequestCompletion(for: cacheKey, result: .failure(err))
+                return
             }
-            if let bodyString = String(data: data, encoding: .utf8) {
-                print("FileManagerClient.listFiles: raw body=\n\(bodyString)")
-            } else {
-                print("FileManagerClient.listFiles: unable to convert response body to utf8 string")
+            
+            // Handle 304
+            if let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 304 {
+                self.cacheQueue.sync {
+                    if let cached = self.fileListingCache[cacheKey] {
+                        self.notifyListRequestCompletion(for: cacheKey, result: .success(cached.files))
+                        return
+                    }
+                }
+            }
+            
+            guard let data = data else {
+                self.notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "no-data", code: -1)))
+                return
             }
 
-            // Define Codable response matching server
             struct FilesResponse: Codable {
                 let files: [FileItem]
                 let currentPath: String?
@@ -107,26 +148,53 @@ final class FileManagerClient: NSObject {
 
             do {
                 let decoder = JSONDecoder()
-                // Server `modified` may be returned as a string; FileItem expects `modified` as String
                 let respObj = try decoder.decode(FilesResponse.self, from: data)
-
-                // Return server-provided listing verbatim so the app's
-                // Cloud Storage view mirrors what `curl` and the server
-                // return (including the `whiteboards` directory).
                 let files = respObj.files
-                print("FileManagerClient.listFiles: returning \(files.count) entries (including folders)")
-                completion(.success(files))
-            } catch {
-                // If decoding fails, log the raw response to help debugging
-                if let s = String(data: data, encoding: .utf8) {
-                    print("FileManagerClient.listFiles: failed to decode response from \(url). Raw response:\n\(s)")
-                } else {
-                    print("FileManagerClient.listFiles: failed to decode response and cannot convert data to string")
+                
+                // Store ETag
+                if let httpResp = resp as? HTTPURLResponse,
+                   let etag = httpResp.allHeaderFields["ETag"] as? String {
+                    self.etagCache[cacheKey] = etag
                 }
-                completion(.failure(NSError(domain: "invalid-response", code: -1)))
+                
+                // Update cache
+                self.cacheQueue.async(flags: .barrier) {
+                    self.fileListingCache[cacheKey] = CachedListing(
+                        files: files,
+                        timestamp: Date(),
+                        etag: self.etagCache[cacheKey]
+                    )
+                }
+                
+                self.notifyListRequestCompletion(for: cacheKey, result: .success(files))
+            } catch {
+                self.notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "invalid-response", code: -1)))
             }
         }
+        task.priority = URLSessionTask.highPriority
         task.resume()
+    }
+    
+    // Helper to notify all waiting callbacks
+    private func notifyListRequestCompletion(for key: String, result: Result<[FileItem], Error>) {
+        requestQueue.sync {
+            let callbacks = pendingListRequests[key] ?? []
+            pendingListRequests.removeValue(forKey: key)
+            
+            DispatchQueue.main.async {
+                callbacks.forEach { $0(result) }
+            }
+        }
+    }
+    
+    // Invalidate cache
+    func invalidateCache(for path: String = "") {
+        cacheQueue.async(flags: .barrier) {
+            self.fileListingCache.removeValue(forKey: path)
+            if !path.isEmpty, let parentPath = (path as NSString).deletingLastPathComponent as String? {
+                self.fileListingCache.removeValue(forKey: parentPath)
+            }
+        }
     }
 
     // MARK: - Thumbnail helpers
@@ -135,28 +203,46 @@ final class FileManagerClient: NSObject {
     }
 
     func prefetchThumbnail(path: String, completion: @escaping (UIImage?) -> Void) {
-        if let img = thumbnailImage(forPath: path) { completion(img); return }
+        if let img = thumbnailImage(forPath: path) {
+            completion(img)
+            return
+        }
+        
+        thumbnailLock.lock()
+        if pendingThumbnails[path] != nil {
+            pendingThumbnails[path]?.append(completion)
+            thumbnailLock.unlock()
+            return
+        }
+        pendingThumbnails[path] = [completion]
+        thumbnailLock.unlock()
 
         thumbnailQueue.async {
             self.thumbnailSemaphore.wait()
             defer { self.thumbnailSemaphore.signal() }
 
-            guard let base = URL(string: self.SERVER_BASE_URL) else { DispatchQueue.main.async { completion(nil) }; return }
+            guard let base = URL(string: self.SERVER_BASE_URL) else {
+                self.notifyThumbnailCallbacks(for: path, image: nil)
+                return
+            }
             var components = URLComponents()
             components.scheme = base.scheme
             components.host = base.host
             components.port = base.port
             components.path = (base.path as NSString).appendingPathComponent("api/thumbnail")
-            // Request a small server-resized thumbnail for faster responses
             components.queryItems = [
                 URLQueryItem(name: "path", value: path),
-                URLQueryItem(name: "w", value: "128"),
-                URLQueryItem(name: "h", value: "128")
+                URLQueryItem(name: "w", value: "160"),
+                URLQueryItem(name: "h", value: "160")
             ]
-            guard let url = components.url else { DispatchQueue.main.async { completion(nil) }; return }
+            guard let url = components.url else {
+                self.notifyThumbnailCallbacks(for: path, image: nil)
+                return
+            }
 
             var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalCacheData
+            req.cachePolicy = .returnCacheDataElseLoad
+            req.timeoutInterval = 5
 
             let sem = DispatchSemaphore(value: 0)
             var resultImage: UIImage? = nil
@@ -164,70 +250,47 @@ final class FileManagerClient: NSObject {
                 defer { sem.signal() }
                 if let data = data, let img = UIImage(data: data) {
                     resultImage = img
-                    self.thumbnailCache.setObject(img, forKey: path as NSString)
+                    let cost = data.count
+                    self.thumbnailCache.setObject(img, forKey: path as NSString, cost: cost)
                 }
             }
+            task.priority = URLSessionTask.lowPriority
             task.resume()
-            // Wait a little longer for thumbnail generation on slower servers
-            _ = sem.wait(timeout: .now() + 8)
-            DispatchQueue.main.async { completion(resultImage) }
+            _ = sem.wait(timeout: .now() + 5)
+            
+            self.notifyThumbnailCallbacks(for: path, image: resultImage)
+        }
+    }
+    
+    private func notifyThumbnailCallbacks(for path: String, image: UIImage?) {
+        thumbnailLock.lock()
+        let callbacks = pendingThumbnails[path] ?? []
+        pendingThumbnails.removeValue(forKey: path)
+        thumbnailLock.unlock()
+        
+        DispatchQueue.main.async {
+            callbacks.forEach { $0(image) }
         }
     }
 
-    // Ping the server debug endpoint to get echo of headers/query for correlation
-    func pingDebug(test: String = "ios") {
-        guard let baseURL = URL(string: SERVER_BASE_URL) else { return }
-        var components = URLComponents()
-        components.scheme = baseURL.scheme
-        components.host = baseURL.host
-        components.port = baseURL.port
-        let basePath = baseURL.path.isEmpty ? "" : baseURL.path
-        components.path = (basePath as NSString).appendingPathComponent("api/debug")
-        components.queryItems = [URLQueryItem(name: "test", value: test)]
-        guard let url = components.url else { return }
-
-        var req = URLRequest(url: url)
-        req.setValue("*/*", forHTTPHeaderField: "Accept")
-
-        let task = session.dataTask(with: req) { data, resp, err in
-            if let err = err {
-                print("FileManagerClient.pingDebug: error=\(err)")
-                return
-            }
-            if let httpResp = resp as? HTTPURLResponse {
-                print("FileManagerClient.pingDebug: URL=\(url.absoluteString) returned status=\(httpResp.statusCode)")
-                print("FileManagerClient.pingDebug: headers=\(httpResp.allHeaderFields)")
-            }
-            if let data = data, let s = String(data: data, encoding: .utf8) {
-                print("FileManagerClient.pingDebug: body=\n\(s)")
-            }
-        }
-        task.resume()
-    }
-
-    // Download file to a local url and return local file URL
+    // Download file - OPTIMIZED
     func downloadFile(at serverPath: String, completion: @escaping (Result<URL, Error>) -> Void) {
         guard var components = URLComponents(string: SERVER_BASE_URL + "/api/download") else { return }
         components.queryItems = [URLQueryItem(name: "path", value: serverPath)]
         guard let url = components.url else { return }
 
-        // Build a URLRequest so we can control cache policy and headers.
         var req = URLRequest(url: url)
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        req.cachePolicy = .returnCacheDataElseLoad
         req.setValue("*/*", forHTTPHeaderField: "Accept")
-        req.setValue("curl/8.7.1", forHTTPHeaderField: "User-Agent")
 
-        // Use downloadTask but validate HTTP status code before saving the file.
-        let task = session.downloadTask(with: req) { tempURL, resp, err in
+        let task = session.downloadTask(with: req) { [weak self] tempURL, resp, err in
             if let err = err { completion(.failure(err)); return }
 
             guard let httpResp = resp as? HTTPURLResponse else {
-                completion(.failure(NSError(domain: "invalid-response", code: -1))); return
+                completion(.failure(NSError(domain: "invalid-response", code: -1)))
+                return
             }
 
-            // If server returned non-200, read error body (if any) and return an error.
             guard httpResp.statusCode == 200 else {
                 if let tempURL = tempURL, let errData = try? Data(contentsOf: tempURL), let s = String(data: errData, encoding: .utf8) {
                     completion(.failure(NSError(domain: "server-error", code: httpResp.statusCode, userInfo: ["body": s])))
@@ -239,7 +302,6 @@ final class FileManagerClient: NSObject {
 
             guard let tempURL = tempURL else { completion(.failure(NSError(domain: "no-temp", code: -1))); return }
 
-            // Move to documents directory with the same filename
             do {
                 let fileName = serverPath.split(separator: "/").last.map(String.init) ?? "download"
                 let dest = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(fileName)
@@ -250,20 +312,17 @@ final class FileManagerClient: NSObject {
                 completion(.failure(error))
             }
         }
-        // Prioritize file downloads triggered by user actions
         task.priority = 1.0
         task.resume()
     }
 
-    // Return a direct URL to download/stream the file from the server without
-    // downloading it into the app first. Useful for AVPlayer, AsyncImage, WKWebView.
     func urlForFile(path serverPath: String) -> URL? {
         guard var components = URLComponents(string: SERVER_BASE_URL + "/api/download") else { return nil }
         components.queryItems = [URLQueryItem(name: "path", value: serverPath)]
         return components.url
     }
 
-    // Delete a file or folder on server
+    // Delete file
     func delete(serverPath: String, completion: @escaping (Result<Void, Error>) -> Void) {
         guard let url = URL(string: SERVER_BASE_URL + "/api/files") else { return }
         var req = URLRequest(url: url)
@@ -276,11 +335,10 @@ final class FileManagerClient: NSObject {
             completion(.failure(error)); return
         }
 
-        let task = session.dataTask(with: req) { data, resp, err in
+        let task = session.dataTask(with: req) { [weak self] data, resp, err in
             if let err = err { completion(.failure(err)); return }
             if let httpResp = resp as? HTTPURLResponse {
                 guard (200...299).contains(httpResp.statusCode) else {
-                    // If server returned error, surface body if available
                     if let data = data, let s = String(data: data, encoding: .utf8) {
                         completion(.failure(NSError(domain: "server-delete", code: httpResp.statusCode, userInfo: ["body": s])))
                     } else {
@@ -289,17 +347,20 @@ final class FileManagerClient: NSObject {
                     return
                 }
             }
+            
+            let parentPath = (serverPath as NSString).deletingLastPathComponent
+            self?.invalidateCache(for: parentPath)
+            
             completion(.success(()))
         }
         task.resume()
     }
     
-    // Delete a file (wrapper for delete)
     func deleteFile(at serverPath: String, completion: @escaping (Result<Void, Error>) -> Void) {
         delete(serverPath: serverPath, completion: completion)
     }
 
-    // Create a folder on server
+    // Create folder
     func createFolder(name: String, currentPath: String = "", completion: @escaping (Result<Void, Error>) -> Void) {
         guard let url = URL(string: SERVER_BASE_URL + "/api/folder") else { return }
         var req = URLRequest(url: url)
@@ -317,7 +378,7 @@ final class FileManagerClient: NSObject {
         task.resume()
     }
 
-    // Upload single file (or multiple by calling multiple times). Uses multipart/form-data.
+    // Upload file - OPTIMIZED
     func upload(fileURL: URL, relativePath: String? = nil, toPath: String = "", progressHandler: ((Double) -> Void)? = nil, completion: @escaping (Result<Void, Error>) -> Void) {
         guard let url = URL(string: SERVER_BASE_URL + "/api/files") else { return }
         var req = URLRequest(url: url)
@@ -328,12 +389,10 @@ final class FileManagerClient: NSObject {
 
         var body = Data()
 
-        // path field
         body.appendString("--\(boundary)\r\n")
         body.appendString("Content-Disposition: form-data; name=\"path\"\r\n\r\n")
         body.appendString("\(toPath)\r\n")
 
-        // file field
         let filename = fileURL.lastPathComponent
         let fieldName = "file-0"
         let mimeType = mimeTypeForPath(path: fileURL.path)
@@ -353,7 +412,6 @@ final class FileManagerClient: NSObject {
             completion(.failure(error)); return
         }
 
-        // optional relative path
         if let rel = relativePath {
             body.appendString("--\(boundary)\r\n")
             body.appendString("Content-Disposition: form-data; name=\"path-0\"\r\n\r\n")
@@ -362,24 +420,25 @@ final class FileManagerClient: NSObject {
 
         body.appendString("--\(boundary)--\r\n")
 
-        // Use uploadTask for progress
-        let uploadTask = session.uploadTask(with: req, from: body) { data, resp, err in
-            if let err = err { 
+        let uploadTask = session.uploadTask(with: req, from: body) { [weak self] data, resp, err in
+            guard let self = self else { return }
+            
+            if let err = err {
                 completion(.failure(err))
             } else {
+                self.invalidateCache(for: toPath)
                 completion(.success(()))
             }
         }
         
-        // Store progress handler
         if let handler = progressHandler {
             self.uploadProgressHandlers[uploadTask.taskIdentifier] = handler
         }
 
+        uploadTask.priority = URLSessionTask.highPriority
         uploadTask.resume()
     }
 
-    // Helper — modern UTType-based mime type detection
     private func mimeTypeForPath(path: String) -> String {
         let url = URL(fileURLWithPath: path)
         let pathExt = url.pathExtension
@@ -393,14 +452,14 @@ final class FileManagerClient: NSObject {
     }
 }
 
-// MARK: - Small helpers
+// MARK: - Helpers
 private extension Data {
     mutating func appendString(_ string: String) {
         if let d = string.data(using: .utf8) { append(d) }
     }
 }
 
-// MARK: - URLSessionDelegate for upload progress
+// MARK: - URLSessionDelegate
 extension FileManagerClient: URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         let progress = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
@@ -412,7 +471,6 @@ extension FileManagerClient: URLSessionTaskDelegate {
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        // Clean up progress handler when task completes
         uploadProgressHandlers.removeValue(forKey: task.taskIdentifier)
     }
 }

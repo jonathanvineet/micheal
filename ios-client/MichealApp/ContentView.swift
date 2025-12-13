@@ -525,11 +525,12 @@ struct DashboardView: View {
     }
     
     func loadRecentFiles() {
-        FileManagerClient.shared.listFiles(path: "") { result in
+        // Use cached listing (forceRefresh: false) to avoid unnecessary network calls
+        FileManagerClient.shared.listFiles(path: "", forceRefresh: false) { result in
             if case .success(let items) = result {
                 DispatchQueue.main.async {
-                    recentFiles = Array(items.prefix(3))
-                    storageUsed = Double(items.reduce(0) { $0 + $1.size }) / 1_000_000_000
+                    self.recentFiles = Array(items.prefix(5)) // Increased from 3 to 5
+                    self.storageUsed = Double(items.reduce(0) { $0 + $1.size }) / 1_000_000_000
                 }
             }
         }
@@ -1306,7 +1307,12 @@ struct FileManagerView: View {
                 }
             }
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: showingImageViewer)
-            .onAppear { loadFiles() }
+            .onAppear { 
+                // Only load if not already loaded
+                if files.isEmpty && !loading {
+                    loadFiles()
+                }
+            }
         }
         
         // end of FileManagerView
@@ -1972,23 +1978,44 @@ struct FileGridItem: View {
                 }
             })
             .onAppear {
-                // Start thumbnail prefetch for image files only, using a shared
-                // prefetcher with limited concurrency and an in-memory cache.
-                if !item.isDirectory && isImageFile(item.name) {
-                    if let img = FileManagerClient.shared.thumbnailImage(forPath: item.path) {
-                        thumbnail = img
-                    } else {
-                        FileManagerClient.shared.prefetchThumbnail(path: item.path) { img in
-                            if let img = img {
-                                self.thumbnail = img
-                            }
-                        }
+                // Optimized lazy loading - only load when visible
+                loadThumbnailIfNeeded()
+            }
+            .onDisappear {
+                // Cancel loading if scrolled out of view quickly
+                // (thumbnail loading already has timeout, so this is optional)
+            }
+        }
+        
+        // Optimized thumbnail loading with viewport awareness
+        private func loadThumbnailIfNeeded() {
+            guard !item.isDirectory else { return }
+            guard isImageFile(item.name) || isVideoFile(item.name) || isPdfFile(item.name) else { return }
+            
+            // Check cache first
+            if let img = FileManagerClient.shared.thumbnailImage(forPath: item.path) {
+                thumbnail = img
+                return
+            }
+            
+            // Load asynchronously with low priority for smooth scrolling
+            DispatchQueue.global(qos: .userInitiated).async {
+                FileManagerClient.shared.prefetchThumbnail(path: item.path) { img in
+                    DispatchQueue.main.async {
+                        self.thumbnail = img
                     }
                 }
             }
         }
         
-        // loadThumbnail removed — using ThumbnailPrefetcher instead
+        private func isVideoFile(_ name: String) -> Bool {
+            let exts = ["mp4", "mov", "m4v", "webm", "avi", "mkv"]
+            return exts.contains(name.components(separatedBy: ".").last?.lowercased() ?? "")
+        }
+        
+        private func isPdfFile(_ name: String) -> Bool {
+            return name.components(separatedBy: ".").last?.lowercased() == "pdf"
+        }
         
         func isImageFile(_ name: String) -> Bool {
             let imageExtensions = ["jpg", "jpeg", "png", "gif", "heic", "heif", "webp"]
@@ -2268,21 +2295,25 @@ struct ImageViewer: View {
         private let imageQueue = DispatchQueue(label: "com.gabriel.imageDecoding", qos: .userInitiated)
         private let bufferLock = NSLock() // Thread safety for buffer access
         private var retryCount = 0
-        private let maxRetries = 5
-        private var isActive = true // Track if view is active
-        private var url = "" // Store the URL for reconnection
+        private let maxRetries = 3 // Reduced from 5 for faster failure
+        private var isActive = true
+        private var url = ""
+        private var lastSuccessfulFrame = Date()
+        private let maxFrameAge: TimeInterval = 10 // Auto-reconnect if no frames for 10s
         
         override init() {
             super.init()
             let config = URLSessionConfiguration.default
-            // Keep request timeout generous for long-lived MJPEG streams
-            config.timeoutIntervalForRequest = 120 // 2 minutes
+            // Optimized timeouts for camera stream
+            config.timeoutIntervalForRequest = 30 // Reduced from 120
             config.timeoutIntervalForResource = 0 // no resource timeout for long streams
-            // Allow more simultaneous connections to the camera host
-            config.httpMaximumConnectionsPerHost = 10
+            config.httpMaximumConnectionsPerHost = 4 // Reduced from 10 to save resources
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
             config.waitsForConnectivity = true
+            // Use background session for better connection pooling
+            config.isDiscretionary = false
+            config.sessionSendsLaunchEvents = false
             session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         }
         

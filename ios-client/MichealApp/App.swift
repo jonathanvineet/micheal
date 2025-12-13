@@ -4,6 +4,7 @@ import LocalAuthentication
 @main
 struct MichealApp: App {
     @StateObject private var authManager = AuthenticationManager()
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
         WindowGroup {
@@ -15,6 +16,27 @@ struct MichealApp: App {
             } else {
                 LockScreen(authManager: authManager)
             }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            handleScenePhaseChange(newPhase)
+        }
+    }
+    
+    // Optimize app lifecycle and resource management
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            // App became active - reconnect streams if needed
+            print("App active - resuming operations")
+        case .inactive:
+            // App about to become inactive - prepare for background
+            print("App inactive")
+        case .background:
+            // App in background - reduce resource usage
+            print("App background - cleaning up resources")
+            // Camera stream will be managed by MJPEGStreamView
+        @unknown default:
+            break
         }
     }
 }
