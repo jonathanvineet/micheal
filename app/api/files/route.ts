@@ -163,7 +163,12 @@ export async function GET(request: NextRequest) {
     }
 
     const result = { 
-      files: fileList, 
+      files: fileList.sort((a, b) => {
+        // Sort by modified date (newest first)
+        const dateA = new Date(a.modified).getTime();
+        const dateB = new Date(b.modified).getTime();
+        return dateB - dateA;
+      }), 
       currentPath: dirPath,
       count: fileList.length 
     };

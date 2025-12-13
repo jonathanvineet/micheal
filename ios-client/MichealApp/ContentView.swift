@@ -912,8 +912,7 @@ struct FileManagerView: View {
     private static var didLoadPaths: Set<String> = []
     @State private var files: [FileItem] = []
     @State private var loading = false
-    // Persist the current folder across view recreations so breadcrumbs and state remain
-    // when navigating back and forth between dashboard and cloud storage.
+    // Persist the current folder across view recreations
     @AppStorage("filemanager.currentPath") private var currentPath: String = ""
     @State private var showPicker = false
     @State private var uploadProgress: Double = 0.0
@@ -922,15 +921,9 @@ struct FileManagerView: View {
     @State private var selectedItem: FileItem? = nil
     @State private var showingImageViewer = false
     @State private var previewURL: URL? = nil
-    // Unified local-preview presentation state. We present a single
-    // sheet for both placeholder and final QuickLook content.
     @State private var isPresentingLocalPreview = false
     @State private var isLoadingPreview = false
-    // Quick lightweight placeholder shown immediately while the full
-    // file downloads. We prefetch a small thumbnail and present it
-    // quickly to avoid QuickLook showing "No preview available".
     @State private var previewPlaceholderImage: UIImage? = nil
-    // Remote streaming/viewing
     @State private var remoteURL: URL? = nil
     @State private var showingRemoteImage = false
     @State private var showingRemoteVideo = false
@@ -938,8 +931,42 @@ struct FileManagerView: View {
     @State private var activePlayer: AVPlayer? = nil
     @State private var isStreamingLoading = false
     @State private var playerStatusObserver: NSKeyValueObservation? = nil
-    // Prevent re-entrant preview opens
     @State private var isOpeningPreview = false
+    
+    // NEW: Sorting options
+    @State private var sortOption: SortOption = .dateNewest
+    @State private var showSortMenu = false
+    
+    enum SortOption {
+        case dateNewest
+        case dateOldest
+        case nameAZ
+        case nameZA
+        case sizeSmallest
+        case sizeLargest
+        
+        var displayName: String {
+            switch self {
+            case .dateNewest: return "Date (Newest)"
+            case .dateOldest: return "Date (Oldest)"
+            case .nameAZ: return "Name (A-Z)"
+            case .nameZA: return "Name (Z-A)"
+            case .sizeSmallest: return "Size (Smallest)"
+            case .sizeLargest: return "Size (Largest)"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .dateNewest: return "calendar.badge.clock"
+            case .dateOldest: return "calendar"
+            case .nameAZ: return "textformat"
+            case .nameZA: return "textformat"
+            case .sizeSmallest: return "arrow.up"
+            case .sizeLargest: return "arrow.down"
+            }
+        }
+    }
     
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     
@@ -1084,6 +1111,28 @@ struct FileManagerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     
                     Spacer()
+                    
+                    // Sort Menu
+                    Menu {
+                        ForEach([SortOption.dateNewest, .dateOldest, .nameAZ, .nameZA, .sizeSmallest, .sizeLargest], id: \.displayName) { option in
+                            Button(action: { sortOption = option }) {
+                                Label(option.displayName, systemImage: sortOption == option ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .foregroundColor(.white)
+                            .font(.system(size: 16, weight: .semibold))
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.white.opacity(0.1))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                    )
+                            )
+                    }
                     
                     Button(action: { loadFiles(force: true) }) {
                         Label("Refresh", systemImage: "arrow.clockwise")
@@ -1325,7 +1374,7 @@ struct FileManagerView: View {
 extension FileManagerView {
     func loadFiles(force: Bool = false) {
         if !force, let cached = FileManagerView.cachedFilesByPath[currentPath] {
-            files = cached
+            files = applySorting(to: cached)
             return
         }
 
@@ -1345,8 +1394,9 @@ extension FileManagerView {
                         return true
                     }
 
-                    self.files = filtered
-                    FileManagerView.cachedFilesByPath[self.currentPath] = filtered
+                    let sorted = self.applySorting(to: filtered)
+                    self.files = sorted
+                    FileManagerView.cachedFilesByPath[self.currentPath] = filtered  // Cache unsorted
                     FileManagerView.didLoadPaths.insert(self.currentPath)
                 case .failure(let err):
                     print("list error: \(err)")
@@ -1354,6 +1404,23 @@ extension FileManagerView {
 
                 loading = false
             }
+        }
+    }
+    
+    func applySorting(to items: [FileItem]) -> [FileItem] {
+        switch sortOption {
+        case .dateNewest:
+            return items.sorted { ($0.modified ?? "") > ($1.modified ?? "") }
+        case .dateOldest:
+            return items.sorted { ($0.modified ?? "") < ($1.modified ?? "") }
+        case .nameAZ:
+            return items.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        case .nameZA:
+            return items.sorted { $0.name.lowercased() > $1.name.lowercased() }
+        case .sizeSmallest:
+            return items.sorted { ($0.size ?? 0) < ($1.size ?? 0) }
+        case .sizeLargest:
+            return items.sorted { ($0.size ?? 0) > ($1.size ?? 0) }
         }
     }
 
@@ -1376,12 +1443,8 @@ extension FileManagerView {
         return name.components(separatedBy: ".").last?.lowercased() == "pdf"
     }
 
-    // Open a file. For common media types (images, video, audio, PDF)
-    // prefer streaming directly from the server so the app doesn't
-    // need to fully download the file first. For unknown types we
-    // fall back to download+QuickLook.
+    // Open a file - OPTIMIZED for faster preview opening
     func openFile(item: FileItem) {
-        // Robust, single-entry preview flow with validation and serialized presentation.
         guard !isOpeningPreview else { return }
         isOpeningPreview = true
 
@@ -1389,18 +1452,38 @@ extension FileManagerView {
         let localDocs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let localURL = localDocs.appendingPathComponent(filename)
 
-        // Reset preview UI immediately and show placeholder
-        DispatchQueue.main.async {
-            self.previewURL = nil
-            self.previewPlaceholderImage = nil
-            self.isLoadingPreview = true
-            self.isPresentingLocalPreview = true
+        // For images, check if we already have cached thumbnail - show it immediately
+        if isImageFile(filename) {
+            if let cachedThumb = FileManagerClient.shared.thumbnailImage(forPath: item.path) {
+                DispatchQueue.main.async {
+                    self.previewPlaceholderImage = cachedThumb
+                    self.isLoadingPreview = true
+                    self.isPresentingLocalPreview = true
+                }
+            } else {
+                // Start loading UI without thumbnail
+                DispatchQueue.main.async {
+                    self.previewURL = nil
+                    self.previewPlaceholderImage = nil
+                    self.isLoadingPreview = true
+                    self.isPresentingLocalPreview = true
+                }
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.previewURL = nil
+                self.previewPlaceholderImage = nil
+                self.isLoadingPreview = true
+                self.isPresentingLocalPreview = true
+            }
         }
 
-        // Prefetch thumbnail asynchronously (non-blocking)
-        FileManagerClient.shared.prefetchThumbnail(path: item.path) { img in
-            DispatchQueue.main.async {
-                if let img = img { self.previewPlaceholderImage = img }
+        // Prefetch thumbnail in parallel (non-blocking)
+        if self.previewPlaceholderImage == nil {
+            FileManagerClient.shared.prefetchThumbnail(path: item.path) { img in
+                DispatchQueue.main.async {
+                    if let img = img { self.previewPlaceholderImage = img }
+                }
             }
         }
 
@@ -1452,26 +1535,34 @@ extension FileManagerView {
             }
         }
 
-        // If local copy exists, validate it first
+        // OPTIMIZED: Check local cache first - skip validation for speed on first try
         if FileManager.default.fileExists(atPath: localURL.path) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                var valid = true
+            let fileStats = try? FileManager.default.attributesOfItem(atPath: localURL.path)
+            let fileSize = (fileStats?[.size] as? NSNumber)?.intValue ?? 0
+            
+            // Quick validation: if file exists and has reasonable size, use it immediately
+            if fileSize > 100 {
+                // For images, do quick validation in background while showing cached version
                 if self.isImageFile(filename) {
-                    if UIImage(contentsOfFile: localURL.path) == nil { valid = false }
-                }
-                DispatchQueue.main.async {
-                    if valid {
-                        presentLocal(localURL)
-                    } else {
-                        // Remove corrupt file and fallthrough to download
-                        try? FileManager.default.removeItem(at: localURL)
-                        // continue to download below
-                        DispatchQueue.main.async { self.isLoadingPreview = true; self.isPresentingLocalPreview = true }
+                    // Present immediately, validate in background
+                    presentLocal(localURL)
+                    
+                    // Validate asynchronously (for next time)
+                    DispatchQueue.global(qos: .utility).async {
+                        if UIImage(contentsOfFile: localURL.path) == nil {
+                            try? FileManager.default.removeItem(at: localURL)
+                        }
                     }
+                    return
+                } else {
+                    // Non-images: present immediately
+                    presentLocal(localURL)
+                    return
                 }
+            } else {
+                // File too small, probably corrupt - remove and redownload
+                try? FileManager.default.removeItem(at: localURL)
             }
-            // If file existed and was valid, presentLocal will return; otherwise continue to download
-            if FileManager.default.fileExists(atPath: localURL.path) { return }
         }
 
         // Download a fresh copy and validate

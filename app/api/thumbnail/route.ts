@@ -129,45 +129,64 @@ async function convertHeicToJpeg(fullPath: string, outputPath: string): Promise<
   }
 }
 
-// Generate video thumbnail
+// Generate video thumbnail - FIXED to extract actual frames
 async function generateVideoThumbnail(fullPath: string, thumbPath: string): Promise<Buffer | null> {
   try {
     const { spawnSync } = await import('child_process');
     const outTmp = thumbPath + '.jpg.tmp';
     const outFinal = thumbPath.replace(/\.[^.]+$/, '.jpg');
 
-    // Try 1 second mark first
-    const args = [
-      '-ss', '1',
-      '-i', fullPath,
-      '-frames:v', '1',
-      '-q:v', '2',
-      '-vf', 'scale=\'min(320,iw)\':-2',
-      '-y',
-      outTmp
-    ];
+    // Try multiple timestamps to find a good frame (avoid black frames at start)
+    const timestamps = ['00:00:02', '00:00:01', '00:00:00.5'];
     
-    const res = spawnSync('ffmpeg', args, { stdio: 'pipe', timeout: 5000 });
-    
-    if (res.status === 0 && fs.existsSync(outTmp)) {
-      await fs.promises.rename(outTmp, outFinal);
-      return await fs.promises.readFile(outFinal);
-    }
-    
-    // If 1s failed, try start of video
-    if (!fs.existsSync(outFinal)) {
-      const args2 = [
+    for (const timestamp of timestamps) {
+      const args = [
+        '-ss', timestamp,           // Seek to timestamp BEFORE input (faster)
         '-i', fullPath,
-        '-frames:v', '1',
-        '-q:v', '2',
-        '-vf', 'scale=\'min(320,iw)\':-2',
+        '-vframes', '1',             // Extract 1 frame
+        '-vf', 'scale=320:320:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-q:v', '3',                 // Quality 3 (good quality)
+        '-f', 'image2',              // Force image format
+        '-update', '1',              // Update single image
         '-y',
         outTmp
       ];
       
-      const res2 = spawnSync('ffmpeg', args2, { stdio: 'pipe', timeout: 5000 });
+      const res = spawnSync('ffmpeg', args, { 
+        stdio: ['ignore', 'pipe', 'pipe'], 
+        timeout: 8000,
+        env: { ...process.env, AV_LOG_FORCE_NOCOLOR: '1' }
+      });
       
-      if (res2.status === 0 && fs.existsSync(outTmp)) {
+      // Check if file was created and has content (not black frame)
+      if (res.status === 0 && fs.existsSync(outTmp)) {
+        const stats = fs.statSync(outTmp);
+        if (stats.size > 1000) { // Valid frame should be > 1KB
+          await fs.promises.rename(outTmp, outFinal);
+          return await fs.promises.readFile(outFinal);
+        }
+        // Remove small/black frame and try next timestamp
+        try { fs.unlinkSync(outTmp); } catch {}
+      }
+    }
+    
+    // Last resort: try to find any frame
+    const args = [
+      '-i', fullPath,
+      '-vf', 'select=gt(scene\\,0.01),scale=320:320:force_original_aspect_ratio=decrease',
+      '-frames:v', '1',
+      '-vsync', 'vfr',
+      '-q:v', '3',
+      '-f', 'image2',
+      '-y',
+      outTmp
+    ];
+    
+    const res = spawnSync('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 8000 });
+    
+    if (res.status === 0 && fs.existsSync(outTmp)) {
+      const stats = fs.statSync(outTmp);
+      if (stats.size > 500) {
         await fs.promises.rename(outTmp, outFinal);
         return await fs.promises.readFile(outFinal);
       }

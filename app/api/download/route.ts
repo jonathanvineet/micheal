@@ -83,7 +83,8 @@ export async function GET(request: NextRequest) {
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'public, max-age=31536000, immutable',
       'Last-Modified': lastModified,
-      'ETag': etag
+      'ETag': etag,
+      'Connection': 'keep-alive'
     };
 
     // Performance: Support ETag caching
@@ -108,13 +109,16 @@ export async function GET(request: NextRequest) {
       headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
       headers['Content-Length'] = String(chunkSize);
 
-      const stream = fs.createReadStream(fullPath, { start, end });
+      // Optimize stream with larger buffer for faster reading
+      const stream = fs.createReadStream(fullPath, { start, end, highWaterMark: 1024 * 1024 });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return new NextResponse(stream as any, { status: 206, headers });
     }
 
-    // No Range header; serve the full file
+    // No Range header; serve the full file with optimized buffer
     headers['Content-Length'] = String(total);
-    const stream = fs.createReadStream(fullPath);
+    const stream = fs.createReadStream(fullPath, { highWaterMark: 1024 * 1024 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return new NextResponse(stream as any, { headers });
   } catch (error) {
     console.error('Error downloading file:', error);
