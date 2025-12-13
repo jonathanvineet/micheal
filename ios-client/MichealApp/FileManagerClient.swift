@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import UniformTypeIdentifiers
+import AVFoundation
 
 /// Simple HTTP client for Micheal server API. Configure `SERVER_BASE_URL` to point to your running Next.js server.
 final class FileManagerClient: NSObject {
@@ -37,13 +38,17 @@ final class FileManagerClient: NSObject {
     
     // Thumbnail cache and prefetch controls - OPTIMIZED
     private let thumbnailCache = NSCache<NSString, UIImage>()
-    private let thumbnailSemaphore = DispatchSemaphore(value: 8)
+    private lazy var thumbnailSemaphore: DispatchSemaphore = {
+        let isIpad = UIDevice.current.userInterfaceIdiom == .pad
+        return DispatchSemaphore(value: isIpad ? 16 : 8)  // iPad: 16 concurrent, iPhone: 8
+    }()
     private let thumbnailQueue = DispatchQueue(label: "thumbnail.queue", attributes: .concurrent)
     private var pendingThumbnails: [String: [(UIImage?) -> Void]] = [:]
     private let thumbnailLock = NSLock()
     
     private override init() {
         super.init()
+        
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 180
@@ -52,9 +57,10 @@ final class FileManagerClient: NSObject {
         config.urlCache = URLCache(memoryCapacity: 50_000_000, diskCapacity: 200_000_000)
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         
-        // Configure thumbnail cache limits
-        thumbnailCache.countLimit = 500
-        thumbnailCache.totalCostLimit = 100_000_000
+        // Configure thumbnail cache limits - increased for iPad with more screen space
+        let cacheIsIpad = UIDevice.current.userInterfaceIdiom == .pad
+        thumbnailCache.countLimit = cacheIsIpad ? 1000 : 500  // iPad: 1000, iPhone: 500
+        thumbnailCache.totalCostLimit = cacheIsIpad ? 300_000_000 : 100_000_000  // iPad: 300MB, iPhone: 100MB
     }
     
     // List files - OPTIMIZED with caching
@@ -345,7 +351,6 @@ final class FileManagerClient: NSObject {
         playerItem.preferredMaximumResolution = CGSize(width: 1920, height: 1080)
         
         let player = AVPlayer(playerItem: playerItem)
-        player.currentItem?.seekingWaitsForVideoData = false
         player.automaticallyWaitsToMinimizeStalling = true
         
         return (player, loaderDelegate)

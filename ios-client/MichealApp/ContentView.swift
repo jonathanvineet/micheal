@@ -969,15 +969,17 @@ struct FileManagerView: View {
     }
     
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    @Environment(\.verticalSizeClass) var verticalSizeClass
     
-    // Adaptive grid columns for file grid
+    // Adaptive grid columns for file grid - optimized for iPad
     private var fileGridColumns: [GridItem] {
         if horizontalSizeClass == .regular {
-            // iPad: 6 columns
-            return Array(repeating: GridItem(.flexible()), count: 6)
+            // iPad: Use more columns based on orientation
+            let columnCount = verticalSizeClass == .regular ? 8 : 10  // Portrait: 8, Landscape: 10
+            return Array(repeating: GridItem(.flexible(), spacing: 8), count: columnCount)
         } else {
             // iPhone: 3 columns
-            return Array(repeating: GridItem(.flexible()), count: 3)
+            return Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
         }
     }
     
@@ -1515,17 +1517,22 @@ extension FileManagerView {
                         
                         let pvc = AVPlayerViewController()
                         pvc.player = player
-                        pvc.allowsVideoFrameAnalysis = false  // Disable frame analysis for speed
-                        pvc.canStartPictureInPictureAutomatically = false
                         
                         if let top = UIApplication.shared.connectedScenes
                             .compactMap({ $0 as? UIWindowScene })
                             .flatMap({ $0.windows })
                             .first(where: { $0.isKeyWindow })?.rootViewController {
                             top.present(pvc, animated: true) {
-                                // Pre-load before playing for seamless start
-                                player.preroll(atRate: 1.0) { finished in
-                                    player.play()
+                                // Wait for player to be ready before prerolling
+                                var observer: NSKeyValueObservation?
+                                observer = player.observe(\.status) { [weak player] _, _ in
+                                    guard let player = player, player.status == .readyToPlay else { return }
+                                    observer?.invalidate()
+                                    
+                                    // Now safe to preroll
+                                    player.preroll(atRate: 1.0) { _ in
+                                        player.play()
+                                    }
                                 }
                                 finishOpening()
                             }
@@ -2043,58 +2050,52 @@ struct FileGridItem: View {
         @Namespace private var animationNamespace
         
         var body: some View {
-            Button(action: { onTap() }) {
-                GeometryReader { geo in
-                    VStack(spacing: 8) {
-                        ZStack {
-                            let thumbSize = min(geo.size.width, geo.size.height * 0.7)
-                            if item.isDirectory {
-                                Image(systemName: "folder.fill")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxWidth: thumbSize * 0.9, maxHeight: thumbSize * 0.9)
-                                    .foregroundColor(.yellow)
-                            } else if let thumb = thumbnail {
-                                Image(uiImage: thumb)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: thumbSize, height: thumbSize)
-                                    .clipped()
-                                    .cornerRadius(8)
-                            } else {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.12))
-                                    .frame(width: thumbSize, height: thumbSize)
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        Image(systemName: iconForFile(item.name))
-                                            .resizable()
-                                            .scaledToFit()
-                                            .padding(12)
-                                            .foregroundColor(.blue)
-                                    )
-                            }
+            GeometryReader { geo in
+                VStack(spacing: 8) {
+                    ZStack {
+                        let thumbSize = min(geo.size.width, geo.size.height * 0.7)
+                        if item.isDirectory {
+                            Image(systemName: "folder.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: thumbSize * 0.9, maxHeight: thumbSize * 0.9)
+                                .foregroundColor(.yellow)
+                        } else if let thumb = thumbnail {
+                            Image(uiImage: thumb)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: thumbSize, height: thumbSize)
+                                .clipped()
+                                .cornerRadius(8)
+                        } else {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.12))
+                                .frame(width: thumbSize, height: thumbSize)
+                                .cornerRadius(8)
+                                .overlay(
+                                    Image(systemName: iconForFile(item.name))
+                                        .resizable()
+                                        .scaledToFit()
+                                        .padding(12)
+                                        .foregroundColor(.blue)
+                                )
                         }
-                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(maxWidth: .infinity)
 
-                        Text(item.name)
-                            .font(.caption)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .padding(6)
+                    Text(item.name)
+                        .font(.caption)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
                 }
-                .frame(minHeight: 120)
+                .padding(6)
             }
-            .buttonStyle(PlainButtonStyle())
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                if !item.isDirectory && isImageFile(item.name) {
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                        onTap()
-                    }
-                }
-            })
+            .frame(minHeight: 120)
+            .contentShape(Rectangle())  // Make entire area tappable but allow scrolling
+            .onTapGesture {
+                onTap()
+            }
             .onAppear {
                 // Optimized lazy loading - only load when visible
                 loadThumbnailIfNeeded()
