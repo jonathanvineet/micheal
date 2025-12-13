@@ -321,6 +321,35 @@ final class FileManagerClient: NSObject {
         components.queryItems = [URLQueryItem(name: "path", value: serverPath)]
         return components.url
     }
+    
+    // Create optimized AVPlayer for video streaming with fast preload
+    func createOptimizedVideoPlayer(path serverPath: String) -> (player: AVPlayer, resourceLoader: StreamingResourceLoaderDelegate)? {
+        guard let url = urlForFile(path: serverPath) else { return nil }
+        
+        // Create custom URLSession for video streaming
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 600
+        config.httpMaximumConnectionsPerHost = 4
+        config.waitsForConnectivity = true
+        config.allowsCellularAccess = true
+        let videoSession = URLSession(configuration: config)
+        
+        // Create AVAsset with custom resource loader
+        let asset = AVURLAsset(url: url)
+        let loaderDelegate = StreamingResourceLoaderDelegate(session: videoSession)
+        asset.resourceLoader.setDelegate(loaderDelegate, queue: DispatchQueue.main)
+        
+        // Create player item with optimizations
+        let playerItem = AVPlayerItem(asset: asset)
+        playerItem.preferredMaximumResolution = CGSize(width: 1920, height: 1080)
+        
+        let player = AVPlayer(playerItem: playerItem)
+        player.currentItem?.seekingWaitsForVideoData = false
+        player.automaticallyWaitsToMinimizeStalling = true
+        
+        return (player, loaderDelegate)
+    }
 
     // Delete file
     func delete(serverPath: String, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -472,5 +501,54 @@ extension FileManagerClient: URLSessionTaskDelegate {
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         uploadProgressHandlers.removeValue(forKey: task.taskIdentifier)
+    }
+}
+
+// MARK: - Optimized AVAssetResourceLoaderDelegate for video streaming
+class StreamingResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate {
+    let session: URLSession
+    
+    init(session: URLSession) {
+        self.session = session
+        super.init()
+    }
+    
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader, shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        guard let url = loadingRequest.request.url else { return false }
+        
+        var request = URLRequest(url: url)
+        request.cachePolicy = .useProtocolCachePolicy
+        request.timeoutInterval = 30
+        
+        // Add range request if needed for seeking
+        if let contentInformationRequest = loadingRequest.contentInformationRequest {
+            let task = session.dataTask(with: request) { data, response, error in
+                if let httpResponse = response as? HTTPURLResponse {
+                    contentInformationRequest.contentType = httpResponse.mimeType
+                    contentInformationRequest.contentLength = httpResponse.expectedContentLength
+                    contentInformationRequest.isByteRangeAccessSupported = true
+                }
+                
+                if let data = data {
+                    loadingRequest.dataRequest?.respond(with: data)
+                }
+                loadingRequest.finishLoading()
+            }
+            task.resume()
+            return true
+        }
+        
+        if let dataRequest = loadingRequest.dataRequest {
+            let task = session.dataTask(with: request) { data, response, error in
+                if let data = data {
+                    dataRequest.respond(with: data)
+                }
+                loadingRequest.finishLoading(with: error)
+            }
+            task.resume()
+            return true
+        }
+        
+        return false
     }
 }

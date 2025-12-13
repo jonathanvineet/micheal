@@ -109,15 +109,19 @@ export async function GET(request: NextRequest) {
       headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
       headers['Content-Length'] = String(chunkSize);
 
-      // Optimize stream with larger buffer for faster reading
-      const stream = fs.createReadStream(fullPath, { start, end, highWaterMark: 1024 * 1024 });
+      // Use larger buffer for video files (2MB) for faster streaming, standard 1MB for others
+      const isVideo = ['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi'].includes(ext);
+      const bufferSize = isVideo ? 1024 * 1024 * 2 : 1024 * 1024;
+      const stream = fs.createReadStream(fullPath, { start, end, highWaterMark: bufferSize });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return new NextResponse(stream as any, { status: 206, headers });
     }
 
     // No Range header; serve the full file with optimized buffer
     headers['Content-Length'] = String(total);
-    const stream = fs.createReadStream(fullPath, { highWaterMark: 1024 * 1024 });
+    const isVideo = ['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi'].includes(ext);
+    const bufferSize = isVideo ? 1024 * 1024 * 2 : 1024 * 1024;
+    const stream = fs.createReadStream(fullPath, { highWaterMark: bufferSize });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return new NextResponse(stream as any, { headers });
   } catch (error) {

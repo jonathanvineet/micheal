@@ -1509,19 +1509,46 @@ extension FileManagerView {
                 // Dismiss placeholder first
                 self.isPresentingLocalPreview = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-                    let player = AVPlayer(url: remote)
-                    let pvc = AVPlayerViewController()
-                    pvc.player = player
-                    if let top = UIApplication.shared.connectedScenes
-                        .compactMap({ $0 as? UIWindowScene })
-                        .flatMap({ $0.windows })
-                        .first(where: { $0.isKeyWindow })?.rootViewController {
-                        top.present(pvc, animated: true) {
-                            player.play()
+                    // OPTIMIZED: Use FileManagerClient's optimized video player
+                    if let playerSetup = FileManagerClient.shared.createOptimizedVideoPlayer(path: item.path) {
+                        let (player, _) = playerSetup
+                        
+                        let pvc = AVPlayerViewController()
+                        pvc.player = player
+                        pvc.allowsVideoFrameAnalysis = false  // Disable frame analysis for speed
+                        pvc.canStartPictureInPictureAutomatically = false
+                        
+                        if let top = UIApplication.shared.connectedScenes
+                            .compactMap({ $0 as? UIWindowScene })
+                            .flatMap({ $0.windows })
+                            .first(where: { $0.isKeyWindow })?.rootViewController {
+                            top.present(pvc, animated: true) {
+                                // Pre-load before playing for seamless start
+                                player.preroll(atRate: 1.0) { finished in
+                                    player.play()
+                                }
+                                finishOpening()
+                            }
+                        } else {
                             finishOpening()
                         }
                     } else {
-                        finishOpening()
+                        // Fallback to simple AVPlayer if optimized version fails
+                        let player = AVPlayer(url: remote)
+                        let pvc = AVPlayerViewController()
+                        pvc.player = player
+                        
+                        if let top = UIApplication.shared.connectedScenes
+                            .compactMap({ $0 as? UIWindowScene })
+                            .flatMap({ $0.windows })
+                            .first(where: { $0.isKeyWindow })?.rootViewController {
+                            top.present(pvc, animated: true) {
+                                player.play()
+                                finishOpening()
+                            }
+                        } else {
+                            finishOpening()
+                        }
                     }
                 }
             }
