@@ -318,7 +318,8 @@ final class FileManagerClient: NSObject {
                 completion(.failure(error))
             }
         }
-        task.priority = 1.0
+        // CRITICAL: Set highest priority for file downloads (user is waiting)
+        task.priority = URLSessionTask.highPriority
         task.resume()
     }
 

@@ -1454,38 +1454,16 @@ extension FileManagerView {
         let localDocs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let localURL = localDocs.appendingPathComponent(filename)
 
-        // For images, check if we already have cached thumbnail - show it immediately
+        // For images: FAST PATH - show remote image directly without downloading
         if isImageFile(filename) {
-            if let cachedThumb = FileManagerClient.shared.thumbnailImage(forPath: item.path) {
+            if let remoteURL = FileManagerClient.shared.urlForFile(path: item.path) {
+                // Show remote image immediately - no download needed!
                 DispatchQueue.main.async {
-                    self.previewPlaceholderImage = cachedThumb
-                    self.isLoadingPreview = true
-                    self.isPresentingLocalPreview = true
+                    self.remoteURL = remoteURL
+                    self.showingRemoteImage = true
+                    self.isOpeningPreview = false
                 }
-            } else {
-                // Start loading UI without thumbnail
-                DispatchQueue.main.async {
-                    self.previewURL = nil
-                    self.previewPlaceholderImage = nil
-                    self.isLoadingPreview = true
-                    self.isPresentingLocalPreview = true
-                }
-            }
-        } else {
-            DispatchQueue.main.async {
-                self.previewURL = nil
-                self.previewPlaceholderImage = nil
-                self.isLoadingPreview = true
-                self.isPresentingLocalPreview = true
-            }
-        }
-
-        // Prefetch thumbnail in parallel (non-blocking)
-        if self.previewPlaceholderImage == nil {
-            FileManagerClient.shared.prefetchThumbnail(path: item.path) { img in
-                DispatchQueue.main.async {
-                    if let img = img { self.previewPlaceholderImage = img }
-                }
+                return
             }
         }
 
@@ -1569,6 +1547,15 @@ extension FileManagerView {
             }
         }
 
+        // Show loading placeholder with cached thumbnail if available
+        DispatchQueue.main.async {
+            if let cachedThumb = FileManagerClient.shared.thumbnailImage(forPath: item.path) {
+                self.previewPlaceholderImage = cachedThumb
+            }
+            self.isLoadingPreview = true
+            self.isPresentingLocalPreview = true
+        }
+
         // OPTIMIZED: Check local cache first - skip validation for speed on first try
         if FileManager.default.fileExists(atPath: localURL.path) {
             let fileStats = try? FileManager.default.attributesOfItem(atPath: localURL.path)
@@ -1576,23 +1563,18 @@ extension FileManagerView {
             
             // Quick validation: if file exists and has reasonable size, use it immediately
             if fileSize > 100 {
-                // For images, do quick validation in background while showing cached version
+                // Present immediately without validation for speed
+                presentLocal(localURL)
+                
+                // Validate asynchronously in background (for next time)
                 if self.isImageFile(filename) {
-                    // Present immediately, validate in background
-                    presentLocal(localURL)
-                    
-                    // Validate asynchronously (for next time)
                     DispatchQueue.global(qos: .utility).async {
                         if UIImage(contentsOfFile: localURL.path) == nil {
                             try? FileManager.default.removeItem(at: localURL)
                         }
                     }
-                    return
-                } else {
-                    // Non-images: present immediately
-                    presentLocal(localURL)
-                    return
                 }
+                return
             } else {
                 // File too small, probably corrupt - remove and redownload
                 try? FileManager.default.removeItem(at: localURL)
