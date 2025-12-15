@@ -160,10 +160,11 @@ struct DashboardView: View {
     @State private var storageUsed: Double = 0.0
     @State private var storageTotal: Double = 100.0
     @State private var recentFiles: [FileItem] = []
-    @State private var todos: [String] = []
+    @State private var todos: [TodoItem] = []
     @State private var newTodo: String = ""
     @State private var showTodoInput: Bool = false
     @State private var showWhiteboardCollections: Bool = false
+    @State private var loadingTodos = false
     
     // Widget editing state
     @State private var isEditMode = false
@@ -457,6 +458,7 @@ struct DashboardView: View {
                 .onAppear {
                     checkServerConnection()
                     loadRecentFiles()
+                    loadTodos()
                 }
             }
             .fullScreenCover(isPresented: $showWhiteboardCollections) {
@@ -531,6 +533,67 @@ struct DashboardView: View {
                 DispatchQueue.main.async {
                     self.recentFiles = Array(items.prefix(5)) // Increased from 3 to 5
                     self.storageUsed = Double(items.reduce(0) { $0 + $1.size }) / 1_000_000_000
+                }
+            }
+        }
+    }
+    
+    func loadTodos() {
+        loadingTodos = true
+        FileManagerClient.shared.fetchTodos { result in
+            DispatchQueue.main.async {
+                loadingTodos = false
+                switch result {
+                case .success(let fetchedTodos):
+                    self.todos = fetchedTodos
+                case .failure(let error):
+                    print("Failed to load todos: \(error)")
+                }
+            }
+        }
+    }
+    
+    func addNewTodo() {
+        let text = newTodo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        
+        FileManagerClient.shared.addTodo(text: text) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let todo):
+                    self.todos.append(todo)
+                    self.newTodo = ""
+                    self.showTodoInput = false
+                case .failure(let error):
+                    print("Failed to add todo: \(error)")
+                }
+            }
+        }
+    }
+    
+    func toggleTodo(_ todo: TodoItem) {
+        FileManagerClient.shared.updateTodo(id: todo.id, completed: !todo.completed) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let updatedTodo):
+                    if let index = self.todos.firstIndex(where: { $0.id == updatedTodo.id }) {
+                        self.todos[index] = updatedTodo
+                    }
+                case .failure(let error):
+                    print("Failed to toggle todo: \(error)")
+                }
+            }
+        }
+    }
+    
+    func deleteTodo(_ todo: TodoItem) {
+        FileManagerClient.shared.deleteTodo(id: todo.id) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    self.todos.removeAll { $0.id == todo.id }
+                case .failure(let error):
+                    print("Failed to delete todo: \(error)")
                 }
             }
         }
@@ -792,9 +855,12 @@ struct CameraFeedCard: View {
     // MARK: - Todo Card
     @available(iOS 15.0, *)
     struct TodoCard: View {
-        @Binding var todos: [String]
+        @Binding var todos: [TodoItem]
         @Binding var newTodo: String
         @Binding var showTodoInput: Bool
+        @State private var isLoading = false
+        @State private var editingTodo: TodoItem? = nil
+        @State private var editText: String = ""
         
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -819,14 +885,17 @@ struct CameraFeedCard: View {
                 .padding(.top, 20)
                 
                 if showTodoInput {
-                    TextField("What needs to be done?", text: $newTodo, onCommit: {
-                        if !newTodo.trimmingCharacters(in: .whitespaces).isEmpty {
-                            todos.append(newTodo.trimmingCharacters(in: .whitespaces))
-                            newTodo = ""
-                            showTodoInput = false
+                    HStack {
+                        TextField("What needs to be done?", text: $newTodo, onCommit: addTodo)
+                            .textFieldStyle(.plain)
+                            .foregroundColor(.white)
+                        
+                        Button(action: addTodo) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.yellow)
                         }
-                    })
-                    .textFieldStyle(.plain)
+                    }
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
@@ -836,8 +905,13 @@ struct CameraFeedCard: View {
                                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
                             )
                     )
-                    .foregroundColor(.white)
                     .padding(.horizontal, 20)
+                }
+                
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .padding()
                 }
                 
                 ScrollView {
@@ -851,19 +925,29 @@ struct CameraFeedCard: View {
                         .padding(.vertical, 40)
                     } else {
                         VStack(spacing: 8) {
-                            ForEach(Array(todos.enumerated()), id: \.offset) { index, todo in
+                            ForEach(todos) { todo in
                                 HStack(spacing: 12) {
-                                    Circle()
-                                        .stroke(Color.white.opacity(0.3), lineWidth: 2)
-                                        .frame(width: 20, height: 20)
+                                    Button(action: { toggleTodo(todo) }) {
+                                        if todo.completed {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 20))
+                                                .foregroundColor(.green)
+                                        } else {
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.3), lineWidth: 2)
+                                                .frame(width: 20, height: 20)
+                                        }
+                                    }
                                     
-                                    Text(todo)
+                                    Text(todo.text)
                                         .font(.system(size: 14))
                                         .foregroundColor(.white)
+                                        .strikethrough(todo.completed, color: .white.opacity(0.5))
+                                        .opacity(todo.completed ? 0.5 : 1.0)
                                     
                                     Spacer()
                                     
-                                    Button(action: { todos.remove(at: index) }) {
+                                    Button(action: { deleteTodo(todo) }) {
                                         Image(systemName: "trash.fill")
                                             .font(.system(size: 14))
                                             .foregroundColor(.red.opacity(0.8))
@@ -899,6 +983,55 @@ struct CameraFeedCard: View {
                             .stroke(Color.white.opacity(0.1), lineWidth: 1)
                     )
             )
+        }
+        
+        // Helper functions
+        private func addTodo() {
+            let text = newTodo.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            
+            isLoading = true
+            FileManagerClient.shared.addTodo(text: text) { result in
+                DispatchQueue.main.async {
+                    isLoading = false
+                    switch result {
+                    case .success(let todo):
+                        todos.append(todo)
+                        newTodo = ""
+                        showTodoInput = false
+                    case .failure(let error):
+                        print("Failed to add todo: \(error)")
+                    }
+                }
+            }
+        }
+        
+        private func toggleTodo(_ todo: TodoItem) {
+            FileManagerClient.shared.updateTodo(id: todo.id, completed: !todo.completed) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let updatedTodo):
+                        if let index = todos.firstIndex(where: { $0.id == updatedTodo.id }) {
+                            todos[index] = updatedTodo
+                        }
+                    case .failure(let error):
+                        print("Failed to toggle todo: \(error)")
+                    }
+                }
+            }
+        }
+        
+        private func deleteTodo(_ todo: TodoItem) {
+            FileManagerClient.shared.deleteTodo(id: todo.id) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success:
+                        todos.removeAll { $0.id == todo.id }
+                    case .failure(let error):
+                        print("Failed to delete todo: \(error)")
+                    }
+                }
+            }
         }
     }
 
@@ -1752,7 +1885,7 @@ struct EditableWidgetGrid: View {
     let storageUsed: Double
     let storageTotal: Double
     let recentFiles: [FileItem]
-    @Binding var todos: [String]
+    @Binding var todos: [TodoItem]
     @Binding var newTodo: String
     @Binding var showTodoInput: Bool
     let columns: Int

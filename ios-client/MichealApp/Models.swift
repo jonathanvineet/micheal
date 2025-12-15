@@ -20,3 +20,18 @@ public struct FileItem: Identifiable, Codable {
     }
 }
 
+// Todo item model
+public struct TodoItem: Identifiable, Codable {
+    public let id: String
+    public var text: String
+    public var completed: Bool
+    public let createdAt: String
+    
+    public init(id: String, text: String, completed: Bool, createdAt: String) {
+        self.id = id
+        self.text = text
+        self.completed = completed
+        self.createdAt = createdAt
+    }
+}
+

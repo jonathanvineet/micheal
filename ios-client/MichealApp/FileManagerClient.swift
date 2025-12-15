@@ -558,3 +558,181 @@ class StreamingResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDelegate {
         return false
     }
 }
+
+// MARK: - Todo API Methods
+extension FileManagerClient {
+    // Fetch all todos
+    func fetchTodos(completion: @escaping (Result<[TodoItem], Error>) -> Void) {
+        guard let url = URL(string: SERVER_BASE_URL + "/api/todos") else {
+            completion(.failure(NSError(domain: "invalid-url", code: -1)))
+            return
+        }
+        
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        
+        let task = session.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(.failure(err))
+                return
+            }
+            
+            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200 else {
+                completion(.failure(NSError(domain: "server-error", code: -1)))
+                return
+            }
+            
+            guard let data = data else {
+                completion(.failure(NSError(domain: "no-data", code: -1)))
+                return
+            }
+            
+            do {
+                let response = try JSONDecoder().decode(TodosResponse.self, from: data)
+                completion(.success(response.todos))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+        task.resume()
+    }
+    
+    // Add a new todo
+    func addTodo(text: String, completion: @escaping (Result<TodoItem, Error>) -> Void) {
+        guard let url = URL(string: SERVER_BASE_URL + "/api/todos") else {
+            completion(.failure(NSError(domain: "invalid-url", code: -1)))
+            return
+        }
+        
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = ["text": text]
+        do {
+            req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        
+        let task = session.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(.failure(err))
+                return
+            }
+            
+            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 201 else {
+                completion(.failure(NSError(domain: "server-error", code: -1)))
+                return
+            }
+            
+            guard let data = data else {
+                completion(.failure(NSError(domain: "no-data", code: -1)))
+                return
+            }
+            
+            do {
+                let response = try JSONDecoder().decode(TodoResponse.self, from: data)
+                completion(.success(response.todo))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+        task.resume()
+    }
+    
+    // Update a todo (toggle completed or edit text)
+    func updateTodo(id: String, completed: Bool? = nil, text: String? = nil, completion: @escaping (Result<TodoItem, Error>) -> Void) {
+        guard let url = URL(string: SERVER_BASE_URL + "/api/todos") else {
+            completion(.failure(NSError(domain: "invalid-url", code: -1)))
+            return
+        }
+        
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: Any] = ["id": id]
+        if let completed = completed {
+            body["completed"] = completed
+        }
+        if let text = text {
+            body["text"] = text
+        }
+        
+        do {
+            req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        
+        let task = session.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(.failure(err))
+                return
+            }
+            
+            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200 else {
+                completion(.failure(NSError(domain: "server-error", code: -1)))
+                return
+            }
+            
+            guard let data = data else {
+                completion(.failure(NSError(domain: "no-data", code: -1)))
+                return
+            }
+            
+            do {
+                let response = try JSONDecoder().decode(TodoResponse.self, from: data)
+                completion(.success(response.todo))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+        task.resume()
+    }
+    
+    // Delete a todo
+    func deleteTodo(id: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard var components = URLComponents(string: SERVER_BASE_URL + "/api/todos") else {
+            completion(.failure(NSError(domain: "invalid-url", code: -1)))
+            return
+        }
+        
+        components.queryItems = [URLQueryItem(name: "id", value: id)]
+        
+        guard let url = components.url else {
+            completion(.failure(NSError(domain: "invalid-url", code: -1)))
+            return
+        }
+        
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        
+        let task = session.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(.failure(err))
+                return
+            }
+            
+            guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200 else {
+                completion(.failure(NSError(domain: "server-error", code: -1)))
+                return
+            }
+            
+            completion(.success(()))
+        }
+        task.resume()
+    }
+}
+
+// MARK: - Todo Response Models
+private struct TodosResponse: Codable {
+    let todos: [TodoItem]
+}
+
+private struct TodoResponse: Codable {
+    let todo: TodoItem
+}
