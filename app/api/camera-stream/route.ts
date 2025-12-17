@@ -245,7 +245,7 @@ function detectWebcam(): string | null {
     }
     
     console.warn('⚠️ Could not auto-detect webcam, defaulting to /dev/video2');
-    detectedCameraIndex = '/dev/video2';
+    detectedCameraIndex = '/dev/video0';
     return detectedCameraIndex;
   }
 }

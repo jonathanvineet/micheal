@@ -10,6 +10,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
     "archiver": "^7.0.1",
     "critters": "^0.0.23",
     "extract-zip": "^2.0.1",
@@ -19,6 +20,7 @@
     "next": "^16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "serialport": "^13.0.0",
     "sharp": "^0.32.0"
   },
   "devDependencies": {
