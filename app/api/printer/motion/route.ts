@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
       case "move": {
         // G1 - Linear move
-        const { axis, distance, feedrate = 3000, relative = true } = body;
+        const { axis, distance, feedrate = 3000, relative = false, disableSoftEndstops = false } = body;
 
         if (!axis || distance === undefined) {
           return NextResponse.json(
@@ -85,20 +85,36 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Set positioning mode
+        // Optionally disable soft endstops (for manual moves beyond limits)
+        if (disableSoftEndstops) {
+          await queueGcode("M211 S0");
+        }
+
+        // Set positioning mode - default to absolute (like Python script)
         if (relative) {
           await queueGcode("G91"); // Relative
         } else {
           await queueGcode("G90"); // Absolute
         }
 
+        // Invert Z-axis: positive = down, negative = up
+        let actualDistance = distance;
+        if (axis.toUpperCase() === "Z") {
+          actualDistance = -distance;
+        }
+
         // Move command
-        const cmd = `G1 ${axis.toUpperCase()}${distance} F${feedrate}`;
+        const cmd = `G1 ${axis.toUpperCase()}${actualDistance} F${feedrate}`;
         reply = await queueGcode(cmd);
+
+        // Re-enable soft endstops if we disabled them
+        if (disableSoftEndstops) {
+          await queueGcode("M211 S1");
+        }
 
         return NextResponse.json({
           success: true,
-          message: `Moved ${axis} ${distance}mm at ${feedrate}mm/min`,
+          message: `Moved ${axis} to ${distance}mm at ${feedrate}mm/min`,
           reply,
         });
       }

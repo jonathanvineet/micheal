@@ -1,22 +1,55 @@
-# Update and enable universe (if needed)
-sudo apt update
-sudo apt install -y software-properties-common apt-transport-https ca-certificates curl gnupg
-
-# Optional: enable universe (some packages live there)
-sudo add-apt-repository universe
-sudo apt update
-
-# Install required binaries
-sudo apt install -y \
-  ffmpeg \
-  imagemagick \
-  poppler-utils \   # provides pdftoppm
-  ghostscript \
-  libreoffice \
-  build-essential \
-  pkg-config \
-  python3 \
-  python3-dev \
-  git \
-  curl \
-  libvips-dev       # necessary for sharp (libvips)
+📥 Received: ok T:76.17 /80.00 B:27.93 /0.00 @:0 B@:0
+📤 Sending: M27
+📥 Received: /SPOTLI~0/STORE-V2/5A8CC6~2/TM~250.GLO 0
+📥 Received: CLAMPS~4.GCO 4257810
+📥 Received: COMPU~10.GCO 4600534
+📥 Received: CCC~91.GCO 8302769
+ GET /api/printer/sd?action=progress 200 in 3.9s (compile: 1592µs, render: 3.9s)
+ GET /api/printer/sd?action=list 200 in 4.0s (compile: 1492µs, render: 4.0s)
+📥 Received: /TRASH~31/501/BATMO~31.GCO 65138094
+📥 Received: /TRASH~31/501/BATMA~38.GCO 17423767
+📥 Received: /TRASH~31/501/BOTTO~46.GCO 9326074
+📥 Received: PAYLO~43.GCO 6546588
+📥 Received: CUPHO~19.GCO 16832405
+📥 Received: PAYLO~10.GCO 6208643
+📥 Received: JESUS~49.GCO 8924967
+📥 Received: CHRIS~10.GCO 9248981
+📥 Received: OPENV~57.GCO 5088720
+📥 Received: BATMO~73.GCO 15764715
+📥 Received: BATMA~10.GCO 17058192
+📥 Received: PLANT~10.GCO 10488197
+📥 Received: TTTT~107.GCO 4234498
+📥 Received: FLOE~99.GCO 6038798
+📥 Received: BAL~10.GCO 12331626
+📥 Received: STE~114.GCO 1922400
+📥 Received: HEA~10.GCO 109643
+📥 Received: BATMA~10.GCO 15846130
+📥 Received: LUFF~10.GCO 14575082
+📥 Received: HOLY~142.GCO 63519943
+📥 Received: PHOT~131.GCO 16818736
+📥 Received: BOTT~141.GCO 9326074
+📥 Received: DRONE~10.GCO 92428161
+📥 Received: End file list
+📥 Received: ok
+✅ Command complete: M27
+📤 Sending: M27
+📥 Received: echo:TF card ok
+📥 Received: nfomation.
+📥 Received: size:
+📥 Received: 585
+📥 Received: init valid:
+📥 Received: 0
+📥 Received: 0
+📥 Received: ok
+✅ Command complete: M27
+📤 Sending: M114
+📥 Received: TF printing byte 0/0
+📥 Received: ok
+✅ Command complete: M114
+📤 Sending: M27
+📥 Received: X:0.00 Y:0.00 Z:0.00 E:0.00 Count X:0 Y:0 Z:0
+📥 Received: ok
+✅ Command complete: M27
+📤 Sending: M21
+^C✅ Command complete: M21
+📤 Sending: M20
