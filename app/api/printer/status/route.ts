@@ -87,14 +87,19 @@ export async function GET(request: NextRequest) {
         const posReply = await queueGcode("M114");
         const tempReply = await queueGcode("M105");
         const connInfo = getConnectionInfo();
+        const temps = parseTemperature(tempReply);
         
         return NextResponse.json({
           success: true,
           status: {
             connected: connInfo.connected,
             position: posReply,
-            temperature: tempReply,
+            temperature: temps,
           },
+          hotendTemp: temps.hotendTemp,
+          hotendTarget: temps.hotendTarget,
+          bedTemp: temps.bedTemp,
+          bedTarget: temps.bedTarget,
           raw: {
             position: posReply,
             temperature: tempReply,
@@ -297,4 +302,32 @@ function parseEndstops(lines: string[]) {
   }
 
   return endstops;
+}
+
+/**
+ * Parse temperature from M105 response
+ * Example: "ok T:76.17 /80.00 B:27.93 /0.00 @:0 B@:0"
+ */
+function parseTemperature(lines: string[]) {
+  const result = {
+    hotendTemp: 0,
+    hotendTarget: 0,
+    bedTemp: 0,
+    bedTarget: 0,
+  };
+
+  for (const line of lines) {
+    // Match pattern: T:current /target B:current /target
+    const match = line.match(/T:([\d.]+)\s*\/([\d.]+)\s+B:([\d.]+)\s*\/([\d.]+)/);
+    
+    if (match) {
+      result.hotendTemp = parseFloat(match[1]);
+      result.hotendTarget = parseFloat(match[2]);
+      result.bedTemp = parseFloat(match[3]);
+      result.bedTarget = parseFloat(match[4]);
+      break;
+    }
+  }
+
+  return result;
 }

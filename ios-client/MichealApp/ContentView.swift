@@ -14,6 +14,9 @@ import CoreGraphics
 import AVKit
 import WebKit
 
+// Import printer components
+// Note: These are defined in separate files (PrinterClient.swift, PrinterControlCard.swift, PrinterStatusCard.swift)
+
 // MARK: - Remote viewers
 @available(iOS 15.0, *)
 struct RemoteImageViewer: View {
@@ -344,6 +347,19 @@ struct DashboardView: View {
                                     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 300)
                             }
                             .padding(.horizontal, 16)
+                            
+                            // 3D Printer Cards Row (iPad layout)
+                            HStack(spacing: 16) {
+                                // Printer Status
+                                PrinterStatusCard()
+                                    .frame(minWidth: 0, maxWidth: .infinity)
+                                
+                                // Printer Controls
+                                PrinterControlCard()
+                                    .frame(minWidth: 0, maxWidth: .infinity)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 20)
                         } else {
                             // Compact: stack vertically but keep Cloud+Scribble side-by-side row
                             HStack(spacing: 16) {
@@ -405,6 +421,10 @@ struct DashboardView: View {
                             TodoCard(todos: $todos, newTodo: $newTodo, showTodoInput: $showTodoInput)
                                 .frame(height: 300)
                                 .padding(.horizontal, 16)
+                            
+                            // 3D Printer Status Card
+                            PrinterStatusCard()
+                                .padding(.horizontal, 16)
                                 .padding(.bottom, 20)
                         }
                         
@@ -450,7 +470,11 @@ struct DashboardView: View {
                             )
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 30)
+                        
+                        // 3D Printer Control Card
+                        PrinterControlCard()
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 30)
                 }
                 .onReceive(timer) { _ in
                     currentTime = Date()
@@ -2945,6 +2969,1085 @@ struct ImageViewer: View {
             }
         }
     }
+
+// MARK: - 3D Printer Client
+class PrinterClient: ObservableObject {
+    static let shared = PrinterClient()
+    
+    private let baseURL: String
+    private let session: URLSession
+    
+    @Published var isConnected: Bool = false
+    @Published var currentTemperatures: TemperatureReadings = TemperatureReadings()
+    @Published var printProgress: PrintProgress = PrintProgress()
+    @Published var sdFiles: [SDFile] = []
+    @Published var printerStatus: PrinterStatus = PrinterStatus()
+    
+    private var statusTimer: Timer?
+    private var consecutiveFailures: Int = 0
+    private let maxConsecutiveFailures = 3
+    
+    init() {
+        // Remove trailing slash to prevent double slashes in URLs
+        let rawURL = FileManagerClient.shared.baseURL
+        self.baseURL = rawURL.hasSuffix("/") ? String(rawURL.dropLast()) : rawURL
+        
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60  // Increased for serial port operations
+        config.timeoutIntervalForResource = 120
+        config.waitsForConnectivity = true
+        self.session = URLSession(configuration: config)
+    }
+    
+    func checkConnection() async -> Bool {
+        guard let url = URL(string: "\(baseURL)/api/ping") else { 
+            print("❌ Invalid ping URL: \(baseURL)/api/ping")
+            return false 
+        }
+        
+        print("🔍 Checking connection to: \(url.absoluteString)")
+        
+        do {
+            let (_, response) = try await session.data(from: url)
+            if let httpResponse = response as? HTTPURLResponse {
+                let connected = (200...299).contains(httpResponse.statusCode)
+                print(connected ? "✅ Connection OK" : "❌ Connection failed: HTTP \(httpResponse.statusCode)")
+                await MainActor.run { 
+                    self.isConnected = connected
+                    if connected {
+                        self.consecutiveFailures = 0  // Reset on successful connection
+                    }
+                }
+                return connected
+            }
+        } catch {
+            print("❌ Connection check failed: \(error)")
+        }
+        await MainActor.run { isConnected = false }
+        return false
+    }
+    
+    func setHotendTemperature(_ temp: Int, wait: Bool = false) async throws {
+        let action = wait ? "hotend-wait" : "hotend"
+        try await sendTemperatureCommand(action: action, temp: temp)
+    }
+    
+    func setBedTemperature(_ temp: Int, wait: Bool = false) async throws {
+        let action = wait ? "bed-wait" : "bed"
+        try await sendTemperatureCommand(action: action, temp: temp)
+    }
+    
+    func turnOffHeaters() async throws {
+        try await sendTemperatureCommand(action: "off", temp: nil)
+    }
+    
+    func preheatPLA() async throws {
+        try await setHotendTemperature(200)
+        try await setBedTemperature(60)
+    }
+    
+    func preheatPETG() async throws {
+        try await setHotendTemperature(235)
+        try await setBedTemperature(80)
+    }
+    
+    func preheatABS() async throws {
+        try await setHotendTemperature(240)
+        try await setBedTemperature(100)
+    }
+    
+    private func sendTemperatureCommand(action: String, temp: Int?) async throws {
+        guard let url = URL(string: "\(baseURL)/api/printer/temperature") else {
+            throw PrinterError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: Any] = ["action": action]
+        if let temp = temp {
+            body["temp"] = temp
+        }
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw PrinterError.requestFailed
+        }
+        
+        print("Temperature command sent: \(action) \(temp ?? 0)°C")
+    }
+    
+    func homeAxes(x: Bool = true, y: Bool = true, z: Bool = true) async throws {
+        guard let url = URL(string: "\(baseURL)/api/printer/motion") else {
+            throw PrinterError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Build axes string: "X", "Y", "Z", "XY", or "all"
+        var axes = ""
+        if x { axes += "X" }
+        if y { axes += "Y" }
+        if z { axes += "Z" }
+        if axes.isEmpty || (x && y && z) {
+            axes = "all"
+        }
+        
+        let body: [String: Any] = [
+            "action": "home",
+            "axes": axes
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw PrinterError.requestFailed
+        }
+        
+        print("🏠 Homing axes: \(axes)")
+    }
+    
+    func moveAxis(x: Double? = nil, y: Double? = nil, z: Double? = nil, feedrate: Int = 3000) async throws {
+        // Move each axis independently using relative positioning
+        if let x = x {
+            try await moveSingleAxis(axis: "X", distance: x, feedrate: feedrate)
+        }
+        if let y = y {
+            try await moveSingleAxis(axis: "Y", distance: y, feedrate: feedrate)
+        }
+        if let z = z {
+            try await moveSingleAxis(axis: "Z", distance: z, feedrate: feedrate)
+        }
+        
+        print("✅ Move complete: X:\(x ?? 0) Y:\(y ?? 0) Z:\(z ?? 0)")
+    }
+    
+    private func moveSingleAxis(axis: String, distance: Double, feedrate: Int) async throws {
+        guard let url = URL(string: "\(baseURL)/api/printer/motion") else {
+            throw PrinterError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Use relative positioning for intuitive jogging
+        let body: [String: Any] = [
+            "action": "move",
+            "axis": axis,
+            "distance": distance,
+            "feedrate": feedrate,
+            "relative": true
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw PrinterError.requestFailed
+        }
+        
+        print("📐 Moved \(axis): \(distance)mm")
+    }
+    
+    func listSDFiles() async throws -> [SDFile] {
+        guard let url = URL(string: "\(baseURL)/api/printer/sd?action=list") else {
+            throw PrinterError.invalidURL
+        }
+        
+        print("📁 Fetching SD files from: \(url.absoluteString)")
+        
+        let (data, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            print("❌ SD list request failed with status: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+            throw PrinterError.requestFailed
+        }
+        
+        print("📁 SD list response status: \(httpResponse.statusCode)")
+        
+        // Debug: Print raw JSON response
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("📋 Raw JSON response: \(jsonString.prefix(500))...")
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            let result = try decoder.decode(SDFilesResponse.self, from: data)
+            print("📁 Found \(result.files.count) files on SD card")
+            
+            for (index, file) in result.files.prefix(3).enumerated() {
+                print("  File \(index + 1): \(file.name) - \(file.displaySize)")
+            }
+            
+            await MainActor.run {
+                self.sdFiles = result.files
+                print("✅ Updated sdFiles array with \(result.files.count) files")
+            }
+            
+            return result.files
+        } catch {
+            print("❌ Failed to decode SD files: \(error)")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .keyNotFound(let key, let context):
+                    print("   Key '\(key.stringValue)' not found: \(context.debugDescription)")
+                case .typeMismatch(let type, let context):
+                    print("   Type mismatch for type \(type): \(context.debugDescription)")
+                case .valueNotFound(let type, let context):
+                    print("   Value not found for type \(type): \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("   Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("   Unknown decoding error")
+                }
+            }
+            print("📋 Raw response: \(String(data: data, encoding: .utf8) ?? "nil")")
+            throw PrinterError.decodingFailed
+        }
+    }
+    
+    func startPrint(filename: String) async throws {
+        try await sendSDCommand(action: "print", filename: filename)
+    }
+    
+    func pausePrint() async throws {
+        try await sendSDCommand(action: "pause")
+    }
+    
+    func resumePrint() async throws {
+        try await sendSDCommand(action: "resume")
+    }
+    
+    func stopPrint() async throws {
+        try await sendSDCommand(action: "stop")
+    }
+    
+    func initSDCard() async throws {
+        try await sendSDCommand(action: "init")
+    }
+    
+    private func sendSDCommand(action: String, filename: String? = nil) async throws {
+        guard let url = URL(string: "\(baseURL)/api/printer/sd") else {
+            throw PrinterError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: Any] = ["action": action]
+        if let filename = filename {
+            body["filename"] = filename
+        }
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw PrinterError.requestFailed
+        }
+        
+        print("SD command sent: \(action) \(filename ?? "")")
+    }
+    
+    func getSDProgress() async throws -> PrintProgress {
+        guard let url = URL(string: "\(baseURL)/api/printer/sd?action=progress") else {
+            throw PrinterError.invalidURL
+        }
+        
+        let (data, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw PrinterError.requestFailed
+        }
+        
+        let decoder = JSONDecoder()
+        let progress = try decoder.decode(PrintProgress.self, from: data)
+        
+        await MainActor.run {
+            self.printProgress = progress
+        }
+        
+        return progress
+    }
+    
+    func startStatusPolling() {
+        stopStatusPolling()
+        
+        // Poll every 5 seconds instead of 2 to reduce server load
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task {
+                await self?.updateStatus()
+            }
+        }
+        
+        Task {
+            await updateStatus()
+        }
+    }
+    
+    func stopStatusPolling() {
+        statusTimer?.invalidate()
+        statusTimer = nil
+    }
+    
+    private func updateStatus() async {
+        var hasFailures = false
+        
+        do {
+            let temps = try await getTemperatures()
+            await MainActor.run {
+                self.currentTemperatures = temps
+                self.consecutiveFailures = 0  // Reset on success
+            }
+        } catch {
+            print("❌ Failed to get temperatures: \(error)")
+            hasFailures = true
+        }
+        
+        do {
+            let progress = try await getSDProgress()
+            await MainActor.run {
+                self.printProgress = progress
+            }
+        } catch {
+            print("❌ Failed to get print progress: \(error)")
+            hasFailures = true
+        }
+        
+        // Track consecutive failures and stop polling if too many
+        if hasFailures {
+            await MainActor.run {
+                self.consecutiveFailures += 1
+                if self.consecutiveFailures >= self.maxConsecutiveFailures {
+                    print("⚠️ Too many consecutive failures (\(self.consecutiveFailures)), stopping status polling")
+                    self.stopStatusPolling()
+                    self.isConnected = false
+                }
+            }
+        }
+        
+        // Don't fetch SD files in polling loop - only on demand to reduce server load
+    }
+    
+    func getTemperatures() async throws -> TemperatureReadings {
+        guard let url = URL(string: "\(baseURL)/api/printer/status") else {
+            throw PrinterError.invalidURL
+        }
+        
+        print("📊 Fetching temperatures from: \(url.absoluteString)")
+        
+        let (data, response) = try await session.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PrinterError.requestFailed
+        }
+        
+        print("📊 Temperatures response status: \(httpResponse.statusCode)")
+        
+        do {
+            let decoder = JSONDecoder()
+            let temps = try decoder.decode(TemperatureReadings.self, from: data)
+            print("📊 Temperatures decoded: Hotend=\(temps.hotendTemp)°C, Bed=\(temps.bedTemp)°C")
+            return temps
+        } catch {
+            print("❌ Failed to decode temperatures: \(error)")
+            print("📋 Raw response: \(String(data: data, encoding: .utf8) ?? "nil")")
+            throw PrinterError.decodingFailed
+        }
+    }
+    
+    func emergencyStop() async throws {
+        guard let url = URL(string: "\(baseURL)/api/printer/safety") else {
+            throw PrinterError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = ["action": "emergency_stop"]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (_, _) = try await session.data(for: request)
+        print("⚠️ EMERGENCY STOP TRIGGERED")
+    }
+}
+
+struct TemperatureReadings: Codable {
+    var hotendTemp: Double = 0
+    var hotendTarget: Double = 0
+    var bedTemp: Double = 0
+    var bedTarget: Double = 0
+    
+    enum CodingKeys: String, CodingKey {
+        case hotendTemp
+        case hotendTarget
+        case bedTemp
+        case bedTarget
+    }
+}
+
+struct PrintProgress: Codable {
+    var isPrinting: Bool = false
+    var filename: String = ""
+    var percentComplete: Double = 0
+    var bytesPrinted: Int = 0
+    var totalBytes: Int = 0
+    
+    enum CodingKeys: String, CodingKey {
+        case isPrinting = "printing"
+        case filename
+        case percentComplete = "percent"
+        case bytesPrinted = "bytes_printed"
+        case totalBytes = "total_bytes"
+    }
+}
+
+struct SDFile: Codable, Identifiable {
+    var id: String { name }
+    var name: String
+    var size: Int?
+    
+    var displaySize: String {
+        guard let size = size else { return "Unknown" }
+        let kb = Double(size) / 1024.0
+        if kb < 1024 {
+            return String(format: "%.1f KB", kb)
+        } else {
+            let mb = kb / 1024.0
+            return String(format: "%.1f MB", mb)
+        }
+    }
+}
+
+struct SDFilesResponse: Codable {
+    var files: [SDFile]
+}
+
+struct PrinterStatus: Codable {
+    var connected: Bool = false
+    var firmware: String = "Unknown"
+    var state: String = "idle"
+}
+
+enum PrinterError: Error {
+    case invalidURL
+    case requestFailed
+    case decodingFailed
+    case notConnected
+}
+
+// MARK: - Printer Status Card
+@available(iOS 15.0, *)
+struct PrinterStatusCard: View {
+    @StateObject private var printerClient = PrinterClient.shared
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: "cube.box.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.purple)
+                
+                Text("3D PRINTER")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.6))
+                    .tracking(1.5)
+                
+                Spacer()
+                
+                Circle()
+                    .fill(printerClient.isConnected ? Color.green : Color.gray)
+                    .frame(width: 8, height: 8)
+            }
+            
+            if printerClient.printProgress.isPrinting {
+                HStack {
+                    Image(systemName: "doc.text.fill")
+                        .foregroundColor(.purple)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(printerClient.printProgress.filename)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        
+                        Text("Printing...")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                    }
+                    
+                    Spacer()
+                }
+                
+                HStack {
+                    Text("Progress")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.6))
+                    
+                    Spacer()
+                    
+                    Text("\(Int(printerClient.printProgress.percentComplete))%")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.purple)
+                }
+                
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.1))
+                        
+                        Capsule()
+                            .fill(Color.purple)
+                            .frame(width: geometry.size.width * CGFloat(printerClient.printProgress.percentComplete / 100.0))
+                    }
+                }
+                .frame(height: 8)
+                
+                HStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hotend")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                        Text("\(Int(printerClient.currentTemperatures.hotendTemp))°C")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.orange)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Bed")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                        Text("\(Int(printerClient.currentTemperatures.bedTemp))°C")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Spacer()
+                }
+            } else {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(.green.opacity(0.7))
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Ready")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                            
+                            Text("Printer idle")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                        
+                        Spacer()
+                    }
+                    
+                    HStack(spacing: 20) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hotend")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.6))
+                            Text("\(Int(printerClient.currentTemperatures.hotendTemp))°C")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.orange)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Bed")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.6))
+                            Text("\(Int(printerClient.currentTemperatures.bedTemp))°C")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.blue)
+                        }
+                        
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.purple.opacity(0.15), Color.purple.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            Task {
+                _ = await printerClient.checkConnection()
+                if printerClient.isConnected {
+                    printerClient.startStatusPolling()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Printer Control Card
+@available(iOS 15.0, *)
+struct PrinterControlCard: View {
+    @StateObject private var printerClient = PrinterClient.shared
+    @State private var isExpanded = false
+    @State private var hotendTarget: Double = 0
+    @State private var bedTarget: Double = 0
+    @State private var moveDistance: Double = 10.0
+    @State private var showSDFiles = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    Image(systemName: "cube.box.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.purple)
+                    
+                    Text("3D PRINTER CONTROLS")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                        .tracking(1.5)
+                    
+                    Spacer()
+                    
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                .padding(20)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isExpanded {
+                VStack(spacing: 16) {
+                    // Temperature Controls
+                    VStack(spacing: 12) {
+                        Text("Temperature")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        // Hotend
+                        HStack {
+                            Image(systemName: "flame.fill")
+                                .foregroundColor(.orange)
+                            Text("Hotend: \(Int(hotendTarget))°C")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white)
+                            Spacer()
+                        }
+                        
+                        Slider(value: $hotendTarget, in: 0...300, step: 5) { editing in
+                            if !editing {
+                                Task { try? await printerClient.setHotendTemperature(Int(hotendTarget)) }
+                            }
+                        }
+                        .accentColor(.orange)
+                        
+                        // Bed
+                        HStack {
+                            Image(systemName: "square.fill")
+                                .foregroundColor(.blue)
+                            Text("Bed: \(Int(bedTarget))°C")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white)
+                            Spacer()
+                        }
+                        
+                        Slider(value: $bedTarget, in: 0...120, step: 5) { editing in
+                            if !editing {
+                                Task { try? await printerClient.setBedTemperature(Int(bedTarget)) }
+                            }
+                        }
+                        .accentColor(.blue)
+                    }
+                    
+                    Divider()
+                        .background(Color.white.opacity(0.1))
+                    
+                    // Preheat Presets
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            Task {
+                                try? await printerClient.preheatPLA()
+                                hotendTarget = 200
+                                bedTarget = 60
+                            }
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 14))
+                                Text("PLA")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.green.opacity(0.3))
+                            .cornerRadius(10)
+                        }
+                        
+                        Button(action: {
+                            Task {
+                                try? await printerClient.preheatPETG()
+                                hotendTarget = 235
+                                bedTarget = 80
+                            }
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 14))
+                                Text("PETG")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.orange.opacity(0.3))
+                            .cornerRadius(10)
+                        }
+                        
+                        Button(action: {
+                            Task {
+                                try? await printerClient.preheatABS()
+                                hotendTarget = 240
+                                bedTarget = 100
+                            }
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 14))
+                                Text("ABS")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.red.opacity(0.3))
+                            .cornerRadius(10)
+                        }
+                    }
+                    
+                    Divider()
+                        .background(Color.white.opacity(0.1))
+                    
+                    // Motion Controls
+                    VStack(spacing: 12) {
+                        Text("Axis Control")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        HStack {
+                            Text("Distance:")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.7))
+                            
+                            ForEach([1.0, 10.0, 50.0], id: \.self) { distance in
+                                Button(action: { moveDistance = distance }) {
+                                    Text("\(Int(distance))mm")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(moveDistance == distance ? .white : .white.opacity(0.5))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(moveDistance == distance ? Color.purple.opacity(0.5) : Color.white.opacity(0.1))
+                                        .cornerRadius(6)
+                                }
+                            }
+                        }
+                        
+                        // Z Controls
+                        HStack(spacing: 16) {
+                            Spacer()
+                            
+                            VStack(spacing: 8) {
+                                Button(action: {
+                                    Task { try? await printerClient.moveAxis(z: moveDistance) }
+                                }) {
+                                    Image(systemName: "arrow.up.circle.fill")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.cyan)
+                                }
+                                
+                                Text("Z")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.5))
+                                
+                                Button(action: {
+                                    Task { try? await printerClient.moveAxis(z: -moveDistance) }
+                                }) {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.cyan)
+                                }
+                            }
+                            
+                            Spacer()
+                        }
+                        
+                        // X/Y Controls
+                        HStack(spacing: 30) {
+                            VStack(spacing: 8) {
+                                Button(action: {
+                                    Task { try? await printerClient.moveAxis(y: moveDistance) }
+                                }) {
+                                    Image(systemName: "arrow.up.circle.fill")
+                                        .font(.system(size: 36))
+                                        .foregroundColor(.green)
+                                }
+                                
+                                HStack(spacing: 16) {
+                                    Button(action: {
+                                        Task { try? await printerClient.moveAxis(x: -moveDistance) }
+                                    }) {
+                                        Image(systemName: "arrow.left.circle.fill")
+                                            .font(.system(size: 36))
+                                            .foregroundColor(.orange)
+                                    }
+                                    
+                                    Text("XY")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white.opacity(0.5))
+                                    
+                                    Button(action: {
+                                        Task { try? await printerClient.moveAxis(x: moveDistance) }
+                                    }) {
+                                        Image(systemName: "arrow.right.circle.fill")
+                                            .font(.system(size: 36))
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    Task { try? await printerClient.moveAxis(y: -moveDistance) }
+                                }) {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 36))
+                                        .foregroundColor(.green)
+                                }
+                            }
+                        }
+                        
+                        Button(action: {
+                            Task { try? await printerClient.homeAxes() }
+                        }) {
+                            HStack {
+                                Image(systemName: "house.fill")
+                                Text("Home All")
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.blue.opacity(0.3))
+                            .cornerRadius(10)
+                        }
+                        
+                        Button(action: {
+                            showSDFiles = true
+                            Task {
+                                try? await printerClient.listSDFiles()
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "sdcard.fill")
+                                Text("Print from TF")
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.purple.opacity(0.3))
+                            .cornerRadius(10)
+                        }
+                    }
+                }
+                .padding(.bottom, 20)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.purple.opacity(0.15), Color.purple.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+        .sheet(isPresented: $showSDFiles) {
+            SDFileBrowserView()
+        }
+    }
+}
+
+// MARK: - SD File Browser
+@available(iOS 15.0, *)
+struct SDFileBrowserView: View {
+    @StateObject private var printerClient = PrinterClient.shared
+    @Environment(\.dismiss) var dismiss
+    @State private var isLoading = false
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                contentView
+            }
+            .navigationTitle("TF Card Files")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                    .foregroundColor(.purple)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: refreshFiles) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.purple)
+                    }
+                }
+            }
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
+        .onAppear(perform: loadFilesIfNeeded)
+    }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        if isLoading {
+            loadingView
+        } else if printerClient.sdFiles.isEmpty {
+            emptyView
+        } else {
+            fileListView
+        }
+    }
+    
+    private var loadingView: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .tint(.purple)
+            Text("Loading TF card files...")
+                .foregroundColor(.white.opacity(0.7))
+        }
+    }
+    
+    private var emptyView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "sdcard")
+                .font(.system(size: 60))
+                .foregroundColor(.gray)
+            Text("No files found")
+                .foregroundColor(.white.opacity(0.7))
+            Button("Refresh", action: refreshFiles)
+                .foregroundColor(.purple)
+        }
+    }
+    
+    private var fileListView: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(printerClient.sdFiles) { file in
+                    fileRow(file)
+                }
+            }
+            .padding(20)
+        }
+    }
+    
+    private func fileRow(_ file: SDFile) -> some View {
+        Button(action: {
+            Task {
+                try? await printerClient.startPrint(filename: file.name)
+                dismiss()
+            }
+        }) {
+            HStack {
+                Image(systemName: "doc.fill")
+                    .foregroundColor(.purple)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(file.name)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    Text(file.displaySize)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                
+                Spacer()
+                
+                Image(systemName: "play.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.system(size: 24))
+            }
+            .padding(16)
+            .background(fileRowBackground)
+        }
+    }
+    
+    private var fileRowBackground: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color.white.opacity(0.05))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+    }
+    
+    private func refreshFiles() {
+        Task {
+            isLoading = true
+            try? await printerClient.listSDFiles()
+            isLoading = false
+        }
+    }
+    
+    private func loadFilesIfNeeded() {
+        if printerClient.sdFiles.isEmpty {
+            refreshFiles()
+        }
+    }
+}
 
 @available(iOS 15.0, *)
 struct ContentView_Previews: PreviewProvider {

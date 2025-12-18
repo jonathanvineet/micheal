@@ -195,9 +195,15 @@ export async function POST(request: NextRequest) {
 
 /**
  * Parse file list from M20 response
+ * Format: "FILENAME.GCO 1234567" (filename followed by size in bytes)
  */
-function parseFileList(lines: string[]): string[] {
-  const files: string[] = [];
+interface SDFile {
+  name: string;
+  size: number;
+}
+
+function parseFileList(lines: string[]): SDFile[] {
+  const files: SDFile[] = [];
   
   for (const line of lines) {
     // Skip headers and "ok" responses
@@ -205,15 +211,26 @@ function parseFileList(lines: string[]): string[] {
       line.startsWith("Begin file list") ||
       line.startsWith("End file list") ||
       line.toLowerCase().startsWith("ok") ||
+      line.toLowerCase().startsWith("echo") ||
       line.trim() === ""
     ) {
       continue;
     }
 
-    // Extract filename (format varies by firmware)
+    // Extract filename and size (format: "FILENAME.GCO 1234567")
     const trimmed = line.trim();
-    if (trimmed) {
-      files.push(trimmed);
+    const parts = trimmed.split(/\s+/);
+    
+    if (parts.length >= 2) {
+      const name = parts[0];
+      const size = parseInt(parts[parts.length - 1], 10);
+      
+      if (!isNaN(size)) {
+        files.push({ name, size });
+      }
+    } else if (trimmed && !trimmed.includes(":")) {
+      // Fallback: just filename without size
+      files.push({ name: trimmed, size: 0 });
     }
   }
 
@@ -222,36 +239,43 @@ function parseFileList(lines: string[]): string[] {
 
 /**
  * Parse progress from M27 response
+ * Format: "SD printing byte 1234/5678" or "TF printing byte 0/0"
  */
 interface PrintProgress {
-  printing: boolean;
-  bytesPrinted: number | null;
-  totalBytes: number | null;
-  percent: number | null;
+  isPrinting: boolean;
+  filename: string | null;
+  percentComplete: number;
+  bytesPrinted: number;
+  totalBytes: number;
 }
 
 function parseProgress(lines: string[]): PrintProgress {
   const result: PrintProgress = {
-    printing: false,
-    bytesPrinted: null,
-    totalBytes: null,
-    percent: null,
+    isPrinting: false,
+    filename: null,
+    percentComplete: 0,
+    bytesPrinted: 0,
+    totalBytes: 0,
   };
 
   for (const line of lines) {
-    // Match patterns like "SD printing byte 1234/5678"
-    const match = line.match(/SD printing byte (\d+)\/(\d+)/);
+    // Match patterns like "SD printing byte 1234/5678" or "TF printing byte 1234/5678"
+    const match = line.match(/(?:SD|TF) printing byte (\d+)\/(\d+)/);
     
     if (match) {
-      result.printing = true;
-      result.bytesPrinted = parseInt(match[1], 10);
-      result.totalBytes = parseInt(match[2], 10);
+      const printed = parseInt(match[1], 10);
+      const total = parseInt(match[2], 10);
       
-      if (result.totalBytes > 0) {
-        result.percent = Math.round((result.bytesPrinted / result.totalBytes) * 100);
+      result.bytesPrinted = printed;
+      result.totalBytes = total;
+      
+      // Only mark as printing if we have actual progress (not 0/0)
+      if (total > 0 && printed > 0) {
+        result.isPrinting = true;
+        result.percentComplete = Math.round((printed / total) * 100);
       }
-    } else if (line.includes("Not SD printing")) {
-      result.printing = false;
+    } else if (line.includes("Not SD printing") || line.includes("Not TF printing")) {
+      result.isPrinting = false;
     }
   }
 
