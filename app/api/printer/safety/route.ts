@@ -65,10 +65,11 @@ export async function POST(request: NextRequest) {
             success: true,
             message: "All systems turned off (heaters, fans, motors)",
           });
-        } catch (error: any) {
+        } catch (error: Error | unknown) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to turn off all systems";
           return NextResponse.json({
             success: false,
-            error: error.message || "Failed to turn off all systems",
+            error: errorMessage,
           }, { status: 500 });
         }
 
@@ -81,11 +82,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error: any) {
+  } catch (error: Error | unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Safety operation failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Safety operation failed",
+        error: errorMessage,
       },
       { status: 500 }
     );

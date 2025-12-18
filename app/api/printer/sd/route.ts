@@ -64,11 +64,12 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "SD card operation failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "SD card operation failed",
+        error: errorMessage,
       },
       { status: 500 }
     );
@@ -180,11 +181,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "SD card operation failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "SD card operation failed",
+        error: errorMessage,
       },
       { status: 500 }
     );
@@ -221,8 +223,15 @@ function parseFileList(lines: string[]): string[] {
 /**
  * Parse progress from M27 response
  */
-function parseProgress(lines: string[]) {
-  const result: any = {
+interface PrintProgress {
+  printing: boolean;
+  bytesPrinted: number | null;
+  totalBytes: number | null;
+  percent: number | null;
+}
+
+function parseProgress(lines: string[]): PrintProgress {
+  const result: PrintProgress = {
     printing: false,
     bytesPrinted: null,
     totalBytes: null,

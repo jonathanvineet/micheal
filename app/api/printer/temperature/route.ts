@@ -27,11 +27,12 @@ export async function GET() {
       temperatures: parsed,
       raw: reply,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to read temperatures";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to read temperatures",
+        error: errorMessage,
       },
       { status: 500 }
     );
@@ -133,11 +134,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Temperature control failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Temperature control failed",
+        error: errorMessage,
       },
       { status: 500 }
     );
@@ -147,8 +149,13 @@ export async function POST(request: NextRequest) {
 /**
  * Parse temperature from M105 response
  */
-function parseTemperature(lines: string[]) {
-  const result: any = {
+interface TemperatureResult {
+  hotend: { current: number | null; target: number | null };
+  bed: { current: number | null; target: number | null };
+}
+
+function parseTemperature(lines: string[]): TemperatureResult {
+  const result: TemperatureResult = {
     hotend: { current: null, target: null },
     bed: { current: null, target: null },
   };

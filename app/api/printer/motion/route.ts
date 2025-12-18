@@ -24,11 +24,12 @@ export async function GET() {
       position: parsed,
       raw: reply,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to get position";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to get position",
+        error: errorMessage,
       },
       { status: 500 }
     );
@@ -147,11 +148,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Motion control failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Motion control failed",
+        error: errorMessage,
       },
       { status: 500 }
     );
@@ -161,8 +163,15 @@ export async function POST(request: NextRequest) {
 /**
  * Parse position from M114 response
  */
-function parsePosition(lines: string[]) {
-  const result: any = {
+interface Position {
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  e: number | null;
+}
+
+function parsePosition(lines: string[]): Position {
+  const result: Position = {
     x: null,
     y: null,
     z: null,

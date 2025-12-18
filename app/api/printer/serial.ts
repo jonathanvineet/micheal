@@ -14,10 +14,9 @@ const SERIAL_PATH = process.env.PRINTER_SERIAL_PATH || "/dev/ttyUSB0";
 const BAUD_RATE = 115200;
 const RESPONSE_TIMEOUT = 3000; // ms to wait for response
 
-let commandQueue: Array<() => Promise<void>> = [];
+const commandQueue: Array<() => Promise<void>> = [];
 let isProcessing = false;
 let isConnected = false;
-let catProcess: any = null;
 
 /**
  * Initialize serial connection to printer
@@ -34,8 +33,9 @@ export async function initSerialConnection(): Promise<void> {
     
     isConnected = true;
     console.log(`✅ Printer connected on ${SERIAL_PATH} at ${BAUD_RATE} baud (DTR reset disabled)`);
-  } catch (error: any) {
-    console.error(`❌ Failed to configure printer: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ Failed to configure printer: ${message}`);
     throw new Error(`Printer not available at ${SERIAL_PATH}`);
   }
 }
@@ -108,9 +108,10 @@ export async function sendGcode(cmd: string): Promise<string[]> {
     console.log(`✅ Command complete: ${cmd}`);
     return response;
 
-  } catch (error: any) {
-    console.error(`❌ G-code error: ${error.message}`);
-    throw new Error(`Failed to send G-code: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ G-code error: ${message}`);
+    throw new Error(`Failed to send G-code: ${message}`);
   }
 }
 

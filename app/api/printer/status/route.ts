@@ -101,11 +101,12 @@ export async function GET(request: NextRequest) {
           },
         });
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Status query failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Status query failed",
+        error: message,
       },
       { status: 500 }
     );
@@ -178,11 +179,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Status action failed";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Status action failed",
+        error: message,
       },
       { status: 500 }
     );
@@ -193,7 +195,12 @@ export async function POST(request: NextRequest) {
  * Parse firmware information from M115 response
  */
 function parseFirmwareInfo(lines: string[]) {
-  const info: any = {
+  const info: {
+    firmware: string | null;
+    version: string | null;
+    machine: string | null;
+    uuid: string | null;
+  } = {
     firmware: null,
     version: null,
     machine: null,
@@ -250,7 +257,14 @@ function parsePrintTime(lines: string[]) {
  * Parse endstop states from M119 response
  */
 function parseEndstops(lines: string[]) {
-  const endstops: any = {
+  const endstops: {
+    x_min: string | null;
+    y_min: string | null;
+    z_min: string | null;
+    x_max: string | null;
+    y_max: string | null;
+    z_max: string | null;
+  } = {
     x_min: null,
     y_min: null,
     z_min: null,
