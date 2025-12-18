@@ -1,11 +1,9 @@
-📥 Received: ok T:76.17 /80.00 B:27.93 /0.00 @:0 B@:0
-📤 Sending: M27
+📤 Sending: M114
+ GET /api/printer/sd?action=list 200 in 1886ms (compile: 1712µs, render: 1884ms)
 📥 Received: /SPOTLI~0/STORE-V2/5A8CC6~2/TM~250.GLO 0
 📥 Received: CLAMPS~4.GCO 4257810
 📥 Received: COMPU~10.GCO 4600534
 📥 Received: CCC~91.GCO 8302769
- GET /api/printer/sd?action=progress 200 in 3.9s (compile: 1592µs, render: 3.9s)
- GET /api/printer/sd?action=list 200 in 4.0s (compile: 1492µs, render: 4.0s)
 📥 Received: /TRASH~31/501/BATMO~31.GCO 65138094
 📥 Received: /TRASH~31/501/BATMA~38.GCO 17423767
 📥 Received: /TRASH~31/501/BOTTO~46.GCO 9326074
@@ -31,25 +29,41 @@
 📥 Received: DRONE~10.GCO 92428161
 📥 Received: End file list
 📥 Received: ok
-✅ Command complete: M27
-📤 Sending: M27
-📥 Received: echo:TF card ok
-📥 Received: nfomation.
-📥 Received: size:
-📥 Received: 585
-📥 Received: init valid:
-📥 Received: 0
-📥 Received: 0
+✅ Command complete: M114
+📤 Sending: M105
+📥 Received: 00 Count X:0 Y:0 Z:0
 📥 Received: ok
+✅ Command complete: M105
+ GET /api/printer/status 200 in 2.5s (compile: 1584µs, render: 2.5s)
+📤 Sending: M27
+📥 Received: ok T:57.88 /0.00 B:29.35 /0.00 @:0 B@:0
 ✅ Command complete: M27
+ GET /api/printer/sd?action=progress 200 in 32ms (compile: 1687µs, render: 30ms)
 📤 Sending: M114
 📥 Received: TF printing byte 0/0
 📥 Received: ok
 ✅ Command complete: M114
-📤 Sending: M27
+📤 Sending: M105
 📥 Received: X:0.00 Y:0.00 Z:0.00 E:0.00 Count X:0 Y:0 Z:0
 📥 Received: ok
+✅ Command complete: M105
+ GET /api/printer/status 200 in 161ms (compile: 1417µs, render: 159ms)
+📤 Sending: M27
+📥 Received: ok T:57.08 /0.00 B:29.23 /0.00 @:0 B@:0
 ✅ Command complete: M27
-📤 Sending: M21
-^C✅ Command complete: M21
-📤 Sending: M20
+ GET /api/printer/sd?action=progress 200 in 33ms (compile: 1823µs, render: 31ms)
+📤 Sending: M114
+📥 Received: TF printing byte 0/0
+📥 Received: ok
+✅ Command complete: M114
+📤 Sending: M105
+📥 Received: X:0.00 Y:0.00 Z:0.00 E:0.00 Count X:0 Y:0 Z:0
+📥 Received: ok
+✅ Command complete: M105
+ GET /api/printer/status 200 in 164ms (compile: 1288µs, render: 163ms)
+📤 Sending: M27
+📥 Received: ok T:55.73 /0.00 B:29.15 /0.00 @:0 B@:0
+✅ Command complete: M27
+ GET /api/printer/sd?action=progress 200 in 32ms (compile: 1335µs, render: 31ms)
+^C GET /api/camera-stream 200 in 77s (compile: 8ms, render: 77s)
+
