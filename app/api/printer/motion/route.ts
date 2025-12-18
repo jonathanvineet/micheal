@@ -97,7 +97,9 @@ export async function POST(request: NextRequest) {
           await queueGcode("G90"); // Absolute
         }
 
-        // Invert Z-axis: positive = down, negative = up
+        // Fix inverted Z-axis hardware: negate Z distance to make API intuitive
+        // API: positive = UP, negative = DOWN
+        // Hardware: positive Z command = DOWN, negative Z command = UP
         let actualDistance = distance;
         if (axis.toUpperCase() === "Z") {
           actualDistance = -distance;
