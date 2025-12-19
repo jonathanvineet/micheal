@@ -1521,6 +1521,8 @@ struct FileManagerView: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: showingImageViewer)
             .onAppear { 
                 print("📂 FileManagerView appeared, currentPath: '\(currentPath)', files.count: \(files.count), loading: \(loading)")
+                // Clear all caches to ensure fresh data
+                FileManagerClient.shared.clearAllCaches()
                 // Always load on first appear to ensure fresh data
                 if files.isEmpty && !loading {
                     print("📂 Calling loadFiles() because files is empty")

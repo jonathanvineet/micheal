@@ -53,14 +53,28 @@ final class FileManagerClient: NSObject {
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 180
         config.httpMaximumConnectionsPerHost = 16
-        config.requestCachePolicy = .useProtocolCachePolicy
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData  // Don't use cache by default
         config.urlCache = URLCache(memoryCapacity: 50_000_000, diskCapacity: 200_000_000)
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        
+        // Clear any stale cached responses
+        URLCache.shared.removeAllCachedResponses()
         
         // Configure thumbnail cache limits - increased for iPad with more screen space
         let cacheIsIpad = UIDevice.current.userInterfaceIdiom == .pad
         thumbnailCache.countLimit = cacheIsIpad ? 1000 : 500  // iPad: 1000, iPhone: 500
         thumbnailCache.totalCostLimit = cacheIsIpad ? 300_000_000 : 100_000_000  // iPad: 300MB, iPhone: 100MB
+    }
+    
+    // Clear all caches
+    func clearAllCaches() {
+        cacheQueue.async(flags: .barrier) {
+            self.fileListingCache.removeAll()
+            self.etagCache.removeAll()
+        }
+        thumbnailCache.removeAllObjects()
+        URLCache.shared.removeAllCachedResponses()
+        print("🗑️ All caches cleared")
     }
     
     // List files - OPTIMIZED with caching
@@ -117,10 +131,14 @@ final class FileManagerClient: NSObject {
 
         var req = URLRequest(url: url)
         req.httpMethod = "GET"  // Explicitly set GET method
-        req.cachePolicy = .returnCacheDataElseLoad
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData  // Force fresh request, ignore cache
         req.setValue("*/*", forHTTPHeaderField: "Accept")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 30
         
         print("📡 FileManagerClient.listFiles: Requesting URL: \(url.absoluteString)")
+        print("📡 HTTP Method: \(req.httpMethod ?? "nil")")
+        print("📡 Cache Policy: \(req.cachePolicy.rawValue)")
         
         if let etag = etagCache[cacheKey] {
             req.setValue(etag, forHTTPHeaderField: "If-None-Match")
