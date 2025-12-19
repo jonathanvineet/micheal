@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
         const cmd = folder ? `M20 ${folder}` : "M20";
         reply = await queueGcode(cmd);
         
+        console.log("📁 M20 raw response:", reply);
         const files = parseFileList(reply);
+        console.log("📁 Parsed files:", files);
         
         return NextResponse.json({
           success: true,

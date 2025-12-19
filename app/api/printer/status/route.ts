@@ -89,17 +89,22 @@ export async function GET(request: NextRequest) {
         const connInfo = getConnectionInfo();
         const temps = parseTemperature(tempReply);
         
+        console.log("🌡️  Parsed temperatures:", temps);
+        
         return NextResponse.json({
           success: true,
+          connected: connInfo.connected,
+          // Return parsed temperature values at root level for iOS
+          hotendTemp: temps.hotendTemp,
+          hotendTarget: temps.hotendTarget,
+          bedTemp: temps.bedTemp,
+          bedTarget: temps.bedTarget,
+          // Also include in status for compatibility
           status: {
             connected: connInfo.connected,
             position: posReply,
             temperature: temps,
           },
-          hotendTemp: temps.hotendTemp,
-          hotendTarget: temps.hotendTarget,
-          bedTemp: temps.bedTemp,
-          bedTarget: temps.bedTarget,
           raw: {
             position: posReply,
             temperature: tempReply,

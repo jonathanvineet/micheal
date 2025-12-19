@@ -422,8 +422,8 @@ struct DashboardView: View {
                                 .frame(height: 300)
                                 .padding(.horizontal, 16)
                             
-                            // 3D Printer Status Card
-                            PrinterStatusCard()
+                            // 3D Printer Card (Unified - Status + Controls + SD Files)
+                            UnifiedPrinterCard()
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 20)
                         }
@@ -470,11 +470,7 @@ struct DashboardView: View {
                             )
                         }
                         .padding(.horizontal, 16)
-                        
-                        // 3D Printer Control Card
-                        PrinterControlCard()
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 30)
+                        .padding(.bottom, 30)
                 }
                 .onReceive(timer) { _ in
                     currentTime = Date()
@@ -2985,7 +2981,7 @@ class PrinterClient: ObservableObject {
     
     private var statusTimer: Timer?
     private var consecutiveFailures: Int = 0
-    private let maxConsecutiveFailures = 3
+    private let maxConsecutiveFailures = 5  // Increased from 3 for better resilience
     
     init() {
         // Remove trailing slash to prevent double slashes in URLs
@@ -3288,8 +3284,8 @@ class PrinterClient: ObservableObject {
     func startStatusPolling() {
         stopStatusPolling()
         
-        // Poll every 5 seconds instead of 2 to reduce server load
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // Poll every 10 seconds to reduce server load (was 5s)
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task {
                 await self?.updateStatus()
             }
@@ -3389,10 +3385,10 @@ class PrinterClient: ObservableObject {
 }
 
 struct TemperatureReadings: Codable {
-    var hotendTemp: Double = 0
-    var hotendTarget: Double = 0
-    var bedTemp: Double = 0
-    var bedTarget: Double = 0
+    var hotendTemp: Double
+    var hotendTarget: Double
+    var bedTemp: Double
+    var bedTarget: Double
     
     enum CodingKeys: String, CodingKey {
         case hotendTemp
@@ -3400,21 +3396,30 @@ struct TemperatureReadings: Codable {
         case bedTemp
         case bedTarget
     }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Decode with fallback to 0 if keys are missing
+        hotendTemp = (try? container.decode(Double.self, forKey: .hotendTemp)) ?? 0
+        hotendTarget = (try? container.decode(Double.self, forKey: .hotendTarget)) ?? 0
+        bedTemp = (try? container.decode(Double.self, forKey: .bedTemp)) ?? 0
+        bedTarget = (try? container.decode(Double.self, forKey: .bedTarget)) ?? 0
+    }
 }
 
 struct PrintProgress: Codable {
     var isPrinting: Bool = false
-    var filename: String = ""
+    var filename: String? = nil
     var percentComplete: Double = 0
     var bytesPrinted: Int = 0
     var totalBytes: Int = 0
     
     enum CodingKeys: String, CodingKey {
-        case isPrinting = "printing"
+        case isPrinting
         case filename
-        case percentComplete = "percent"
-        case bytesPrinted = "bytes_printed"
-        case totalBytes = "total_bytes"
+        case percentComplete
+        case bytesPrinted
+        case totalBytes
     }
 }
 
@@ -3452,7 +3457,402 @@ enum PrinterError: Error {
     case notConnected
 }
 
-// MARK: - Printer Status Card
+// MARK: - Unified Printer Card (Status + Controls + SD Files)
+@available(iOS 15.0, *)
+struct UnifiedPrinterCard: View {
+    @StateObject private var printerClient = PrinterClient.shared
+    @State private var isExpanded = false
+    @State private var hotendTarget: Double = 0
+    @State private var bedTarget: Double = 0
+    @State private var moveDistance: Double = 10.0
+    @State private var showSDFiles = false
+    @State private var sdFilesLoaded = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header - Always Visible (Shows Temps + Status)
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                headerView
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // Expanded Content (Controls + SD Files)
+            if isExpanded {
+                VStack(spacing: 20) {
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    // Temperature Controls
+                    temperatureControlsView
+                    
+                    // Motion Controls
+                    motionControlsView
+                    
+                    // SD Card Files
+                    sdCardView
+                }
+                .padding(20)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(cardBackground)
+        .onAppear {
+            Task {
+                _ = await printerClient.checkConnection()
+                if printerClient.isConnected {
+                    printerClient.startStatusPolling()
+                }
+            }
+        }
+    }
+    
+    private var headerView: some View {
+        HStack {
+            // Status Indicator
+            Circle()
+                .fill(printerClient.isConnected ? Color.green : Color.gray)
+                .frame(width: 12, height: 12)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("3D PRINTER")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.6))
+                    .tracking(1.5)
+                
+                if printerClient.printProgress.isPrinting {
+                    Text(printerClient.printProgress.filename ?? "Printing...")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                } else {
+                    Text("Ready")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+            }
+            
+            Spacer()
+            
+            // Temperature Display
+            HStack(spacing: 16) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Hotend")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text("\(Int(printerClient.currentTemperatures.hotendTemp))°C")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.orange)
+                }
+                
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Bed")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text("\(Int(printerClient.currentTemperatures.bedTemp))°C")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.blue)
+                }
+            }
+            
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white.opacity(0.4))
+                .padding(.leading, 8)
+        }
+        .padding(20)
+    }
+    
+    private var temperatureControlsView: some View {
+        VStack(spacing: 12) {
+            Text("Temperature")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // Hotend Control
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(.orange)
+                Text("Hotend: \(Int(hotendTarget))°C")
+                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 12))
+                Spacer()
+            }
+            Slider(value: $hotendTarget, in: 0...300, step: 5, onEditingChanged: { editing in
+                if !editing {
+                    Task {
+                        try? await printerClient.setHotendTemperature(Int(hotendTarget))
+                    }
+                }
+            })
+            .accentColor(.orange)
+            
+            // Bed Control
+            HStack {
+                Image(systemName: "square.fill")
+                    .foregroundColor(.blue)
+                Text("Bed: \(Int(bedTarget))°C")
+                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 12))
+                Spacer()
+            }
+            Slider(value: $bedTarget, in: 0...120, step: 5, onEditingChanged: { editing in
+                if !editing {
+                    Task {
+                        try? await printerClient.setBedTemperature(Int(bedTarget))
+                    }
+                }
+            })
+            .accentColor(.blue)
+            
+            // Preheat Presets
+            HStack(spacing: 12) {
+                presetButton("PLA", color: .green) {
+                    Task { try? await printerClient.preheatPLA() }
+                }
+                presetButton("PETG", color: .orange) {
+                    Task { try? await printerClient.preheatPETG() }
+                }
+                presetButton("ABS", color: .red) {
+                    Task { try? await printerClient.preheatABS() }
+                }
+            }
+        }
+    }
+    
+    private var motionControlsView: some View {
+        VStack(spacing: 12) {
+            Text("Axis Control")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // Distance Selector
+            HStack {
+                Text("Distance:")
+                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 12))
+                
+                ForEach([1.0, 10.0, 50.0], id: \.self) { distance in
+                    Button(action: { moveDistance = distance }) {
+                        Text("\(Int(distance))mm")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(moveDistance == distance ? .black : .white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(moveDistance == distance ? Color.purple : Color.white.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                }
+            }
+            
+            // Movement Controls
+            VStack(spacing: 12) {
+                // Z Axis
+                HStack(spacing: 20) {
+                    Button(action: {
+                        Task { try? await printerClient.moveAxis(z: moveDistance) }
+                    }) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.cyan)
+                    }
+                    Text("Z").foregroundColor(.white.opacity(0.7))
+                    Button(action: {
+                        Task { try? await printerClient.moveAxis(z: -moveDistance) }
+                    }) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.cyan)
+                    }
+                }
+                
+                // X/Y Axes
+                VStack(spacing: 8) {
+                    Button(action: {
+                        Task { try? await printerClient.moveAxis(y: moveDistance) }
+                    }) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.green)
+                    }
+                    
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            Task { try? await printerClient.moveAxis(x: -moveDistance) }
+                        }) {
+                            Image(systemName: "arrow.left.circle.fill")
+                                .font(.system(size: 36))
+                                .foregroundColor(.orange)
+                        }
+                        Button(action: {
+                            Task { try? await printerClient.moveAxis(x: moveDistance) }
+                        }) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 36))
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    
+                    Button(action: {
+                        Task { try? await printerClient.moveAxis(y: -moveDistance) }
+                    }) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 36))
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+            
+            Button(action: {
+                Task { try? await printerClient.homeAxes() }
+            }) {
+                HStack {
+                    Image(systemName: "house.fill")
+                    Text("Home All")
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.blue.opacity(0.3))
+                .cornerRadius(10)
+            }
+        }
+    }
+    
+    private var sdCardView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("TF Card Files")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button(action: loadSDFiles) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text(sdFilesLoaded ? "Refresh" : "Load Files")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(.purple)
+                }
+            }
+            
+            if printerClient.sdFiles.isEmpty {
+                if sdFilesLoaded {
+                    Text("No files found")
+                        .foregroundColor(.white.opacity(0.5))
+                        .font(.system(size: 12))
+                        .padding(.vertical, 20)
+                } else {
+                    Text("Tap 'Load Files' to view TF card contents")
+                        .foregroundColor(.white.opacity(0.5))
+                        .font(.system(size: 12))
+                        .padding(.vertical, 20)
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(printerClient.sdFiles.prefix(10)) { file in
+                            sdFileRow(file)
+                        }
+                        
+                        if printerClient.sdFiles.count > 10 {
+                            Text("+\(printerClient.sdFiles.count - 10) more files")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                                .padding(.vertical, 8)
+                        }
+                    }
+                }
+                .frame(maxHeight: 300)
+            }
+        }
+    }
+    
+    private func sdFileRow(_ file: SDFile) -> some View {
+        Button(action: {
+            Task {
+                try? await printerClient.startPrint(filename: file.name)
+            }
+        }) {
+            HStack {
+                Image(systemName: "doc.fill")
+                    .foregroundColor(.purple)
+                    .font(.system(size: 14))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    if let size = file.size {
+                        Text(file.displaySize)
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: "play.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.system(size: 20))
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.05))
+            )
+        }
+    }
+    
+    private func presetButton(_ label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: "flame.fill")
+                Text(label)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(color.opacity(0.3))
+            .cornerRadius(10)
+        }
+    }
+    
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 24)
+            .fill(
+                LinearGradient(
+                    colors: [Color.purple.opacity(0.15), Color.purple.opacity(0.05)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+    }
+    
+    private func loadSDFiles() {
+        Task {
+            do {
+                _ = try await printerClient.listSDFiles()
+                sdFilesLoaded = true
+            } catch {
+                print("Failed to load SD files: \(error)")
+            }
+        }
+    }
+}
+
+// MARK: - Printer Status Card (OLD - Keep for iPad layout)
 @available(iOS 15.0, *)
 struct PrinterStatusCard: View {
     @StateObject private var printerClient = PrinterClient.shared
@@ -3482,7 +3882,7 @@ struct PrinterStatusCard: View {
                         .foregroundColor(.purple)
                     
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(printerClient.printProgress.filename)
+                        Text(printerClient.printProgress.filename ?? "Printing...")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
