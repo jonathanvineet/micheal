@@ -67,21 +67,16 @@ final class FileManagerClient: NSObject {
     func listFiles(path: String = "", forceRefresh: Bool = false, completion: @escaping (Result<[FileItem], Error>) -> Void) {
         let cacheKey = path
         
-        print("🌐 listFiles called: path='\(path)', forceRefresh=\(forceRefresh)")
-        
         // Check cache first
         if !forceRefresh {
             cacheQueue.sync {
                 if let cached = fileListingCache[cacheKey] {
                     let age = Date().timeIntervalSince(cached.timestamp)
                     if age < listingCacheTTL {
-                        print("✅ Using cached files: \(cached.files.count) items, age: \(Int(age))s")
                         DispatchQueue.main.async {
                             completion(.success(cached.files))
                         }
                         return
-                    } else {
-                        print("⏰ Cache expired (age: \(Int(age))s)")
                     }
                 }
             }
@@ -90,7 +85,6 @@ final class FileManagerClient: NSObject {
         // Check if request in flight
         requestQueue.sync {
             if pendingListRequests[cacheKey] != nil {
-                print("🔄 Request already in flight for path: '\(path)'")
                 pendingListRequests[cacheKey]?.append(completion)
                 return
             }
@@ -99,7 +93,6 @@ final class FileManagerClient: NSObject {
 
         // Build URL
         guard let baseURL = URL(string: SERVER_BASE_URL) else {
-            print("❌ Invalid base URL: \(SERVER_BASE_URL)")
             notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "invalid-url", code: -1)))
             return
         }
@@ -118,16 +111,16 @@ final class FileManagerClient: NSObject {
             }
         }
         guard let url = components.url else {
-            print("❌ Failed to build URL from components")
             notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "invalid-url", code: -1)))
             return
         }
 
-        print("🌐 Making HTTP GET request to: \(url.absoluteString)")
-        
         var req = URLRequest(url: url)
+        req.httpMethod = "GET"  // Explicitly set GET method
         req.cachePolicy = .returnCacheDataElseLoad
         req.setValue("*/*", forHTTPHeaderField: "Accept")
+        
+        print("📡 FileManagerClient.listFiles: Requesting URL: \(url.absoluteString)")
         
         if let etag = etagCache[cacheKey] {
             req.setValue(etag, forHTTPHeaderField: "If-None-Match")
@@ -137,14 +130,12 @@ final class FileManagerClient: NSObject {
             guard let self = self else { return }
             
             if let err = err {
-                print("❌ HTTP request failed: \(err.localizedDescription)")
                 self.notifyListRequestCompletion(for: cacheKey, result: .failure(err))
                 return
             }
             
             // Handle 304
             if let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 304 {
-                print("✅ HTTP 304 Not Modified - using cached data")
                 self.cacheQueue.sync {
                     if let cached = self.fileListingCache[cacheKey] {
                         self.notifyListRequestCompletion(for: cacheKey, result: .success(cached.files))
@@ -153,17 +144,16 @@ final class FileManagerClient: NSObject {
                 }
             }
             
-            if let httpResp = resp as? HTTPURLResponse {
-                print("✅ HTTP response: \(httpResp.statusCode)")
-            }
-            
             guard let data = data else {
-                print("❌ No data in response")
+                print("❌ FileManagerClient.listFiles: No data received")
                 self.notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "no-data", code: -1)))
                 return
             }
             
-            print("📦 Received \(data.count) bytes of data")
+            print("📡 FileManagerClient.listFiles: Received \(data.count) bytes")
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📡 Response preview: \(responseString.prefix(500))")
+            }
 
             struct FilesResponse: Codable {
                 let files: [FileItem]
@@ -176,7 +166,7 @@ final class FileManagerClient: NSObject {
                 let respObj = try decoder.decode(FilesResponse.self, from: data)
                 let files = respObj.files
                 
-                print("✅ Decoded \(files.count) files successfully")
+                print("✅ FileManagerClient.listFiles: Successfully decoded \(files.count) files")
                 
                 // Store ETag
                 if let httpResp = resp as? HTTPURLResponse,
@@ -195,16 +185,26 @@ final class FileManagerClient: NSObject {
                 
                 self.notifyListRequestCompletion(for: cacheKey, result: .success(files))
             } catch {
-                print("❌ Failed to decode JSON: \(error)")
-                if let jsonString = String(data: data, encoding: .utf8) {
-                    print("📋 Raw JSON: \(jsonString.prefix(500))")
+                print("❌ FileManagerClient.listFiles: Decoding error: \(error)")
+                if let decodingError = error as? DecodingError {
+                    switch decodingError {
+                    case .dataCorrupted(let context):
+                        print("❌ Data corrupted: \(context)")
+                    case .keyNotFound(let key, let context):
+                        print("❌ Key '\(key.stringValue)' not found: \(context.debugDescription)")
+                    case .typeMismatch(let type, let context):
+                        print("❌ Type mismatch for type \(type): \(context.debugDescription)")
+                    case .valueNotFound(let type, let context):
+                        print("❌ Value not found for type \(type): \(context.debugDescription)")
+                    @unknown default:
+                        print("❌ Unknown decoding error")
+                    }
                 }
                 self.notifyListRequestCompletion(for: cacheKey, result: .failure(NSError(domain: "invalid-response", code: -1)))
             }
         }
         task.priority = URLSessionTask.highPriority
         task.resume()
-        print("🚀 HTTP request started")
     }
     
     // Helper to notify all waiting callbacks

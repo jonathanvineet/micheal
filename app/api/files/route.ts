@@ -33,8 +33,10 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 export async function GET(request: NextRequest) {
   console.log("🌐 GET /api/files called");
+  console.log("🌐 Method:", request.method);
   console.log("🌐 URL:", request.url);
   console.log("🌐 Search params:", request.nextUrl.searchParams.toString());
+  console.log("🌐 Headers:", Object.fromEntries(request.headers.entries()));
   
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -179,7 +181,8 @@ export async function GET(request: NextRequest) {
       count: fileList.length 
     };
 
-    console.log("✅ GET /api/files returning:", JSON.stringify(result).substring(0, 200));
+    console.log("✅ GET /api/files returning files count:", result.count);
+    console.log("✅ Sample response:", JSON.stringify(result).substring(0, 300));
     
     // Cache the result
     dirCache.set(cacheKey, { data: result, timestamp: Date.now() });

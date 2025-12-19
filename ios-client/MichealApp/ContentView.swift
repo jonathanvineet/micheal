@@ -93,6 +93,14 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     if showDashboard {
                         DashboardView(showDashboard: $showDashboard)
+                            .onAppear {
+                                // Resume printer polling when returning to dashboard
+                                PrinterClient.shared.startStatusPolling()
+                            }
+                            .onDisappear {
+                                // Stop printer polling when leaving dashboard to save resources
+                                PrinterClient.shared.stopStatusPolling()
+                            }
                     } else {
                         FileManagerView(showDashboard: $showDashboard)
                     }
@@ -1562,7 +1570,10 @@ extension FileManagerView {
                     FileManagerView.cachedFilesByPath[self.currentPath] = filtered  // Cache unsorted
                     FileManagerView.didLoadPaths.insert(self.currentPath)
                 case .failure(let err):
-                    print("list error: \(err)")
+                    print("❌ list error: \(err)")
+                    print("❌ error domain: \((err as NSError).domain)")
+                    print("❌ error code: \((err as NSError).code)")
+                    print("❌ error userInfo: \((err as NSError).userInfo)")
                 }
 
                 loading = false
