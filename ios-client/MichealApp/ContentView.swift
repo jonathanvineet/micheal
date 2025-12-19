@@ -1512,9 +1512,13 @@ struct FileManagerView: View {
             }
             .animation(.spring(response: 0.6, dampingFraction: 0.8), value: showingImageViewer)
             .onAppear { 
-                // Only load if not already loaded
+                print("📂 FileManagerView appeared, currentPath: '\(currentPath)', files.count: \(files.count), loading: \(loading)")
+                // Always load on first appear to ensure fresh data
                 if files.isEmpty && !loading {
-                    loadFiles()
+                    print("📂 Calling loadFiles() because files is empty")
+                    loadFiles(force: true)  // Force initial load to bypass cache
+                } else {
+                    print("📂 Skipping loadFiles: files.count=\(files.count), loading=\(loading)")
                 }
             }
         }
@@ -1528,11 +1532,15 @@ struct FileManagerView: View {
 @available(iOS 15.0, *)
 extension FileManagerView {
     func loadFiles(force: Bool = false) {
+        print("📂 loadFiles called with force=\(force), currentPath='\(currentPath)'")
+        
         if !force, let cached = FileManagerView.cachedFilesByPath[currentPath] {
+            print("📂 Using cached files: \(cached.count) items")
             files = applySorting(to: cached)
             return
         }
 
+        print("📂 Making API call to list files at path: '\(currentPath)'")
         loading = true
         FileManagerClient.shared.listFiles(path: currentPath) { result in
             DispatchQueue.main.async {

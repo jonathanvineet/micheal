@@ -32,10 +32,16 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 export async function GET(request: NextRequest) {
+  console.log("🌐 GET /api/files called");
+  console.log("🌐 URL:", request.url);
+  console.log("🌐 Search params:", request.nextUrl.searchParams.toString());
+  
   try {
     const searchParams = request.nextUrl.searchParams;
     const dirPath = searchParams.get('path') || '';
     const fullPath = path.join(UPLOAD_DIR, dirPath);
+    
+    console.log("🌐 GET /api/files: dirPath='" + dirPath + "', fullPath='" + fullPath + "'");
 
     // Performance: Check cache first
     const cacheKey = fullPath;
@@ -173,6 +179,8 @@ export async function GET(request: NextRequest) {
       count: fileList.length 
     };
 
+    console.log("✅ GET /api/files returning:", JSON.stringify(result).substring(0, 200));
+    
     // Cache the result
     dirCache.set(cacheKey, { data: result, timestamp: Date.now() });
 
@@ -184,11 +192,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  console.log("🌐 POST /api/files called");
   try {
     // For Next.js, we need to use formData() which already handles multipart parsing
     const formData = await request.formData();
     const dirPath = (formData.get('path') as string) || '';
     const uploadPath = path.join(UPLOAD_DIR, dirPath);
+    
+    console.log("📤 POST /api/files: dirPath='" + dirPath + "'");
     
     // Security check
     if (!uploadPath.startsWith(UPLOAD_DIR)) {
