@@ -54,32 +54,48 @@ export async function sendGcode(cmd: string): Promise<string[]> {
 
     console.log(`📤 Sending: ${cmd}`);
 
+    // Flush any pending data from serial port before sending command
+    try {
+      await execAsync(`sudo timeout 0.1 cat ${SERIAL_PATH} > /dev/null 2>&1 || true`);
+    } catch {
+      // Ignore flush errors
+    }
+
     // Send command and read response in one operation
     const response = await new Promise<string[]>((resolve, reject) => {
       const lines: string[] = [];
       let buffer = "";
+      let hasReceivedData = false;
       
       // Start cat process to read responses
-      const cat = spawn("sudo", ["timeout", "3", "cat", SERIAL_PATH]);
+      const cat = spawn("sudo", ["timeout", "4", "cat", SERIAL_PATH]);
       
       // Send the command after cat starts
       setTimeout(async () => {
-        await execAsync(`printf "${cmd}\\n" | sudo tee ${SERIAL_PATH} > /dev/null`);
+        try {
+          await execAsync(`printf "${cmd}\\n" | sudo tee ${SERIAL_PATH} > /dev/null`);
+        } catch (err) {
+          console.error(`❌ Failed to send command: ${err}`);
+        }
       }, 100);
       
       const timer = setTimeout(() => {
         cat.kill();
+        if (!hasReceivedData) {
+          console.log(`⏱️  Timeout waiting for response to: ${cmd}`);
+        }
         resolve(lines.length > 0 ? lines : ["ok"]);
-      }, 3500);
+      }, 4500);
       
       cat.stdout.on("data", (data: Buffer) => {
+        hasReceivedData = true;
         buffer += data.toString();
         const newLines = buffer.split("\n");
         buffer = newLines.pop() || "";
         
         for (const line of newLines) {
           const trimmed = line.trim();
-          if (trimmed) {
+          if (trimmed && !trimmed.startsWith("echo:")) {  // Skip echo messages
             lines.push(trimmed);
             console.log(`📥 Received: ${trimmed}`);
             
@@ -94,9 +110,10 @@ export async function sendGcode(cmd: string): Promise<string[]> {
         }
       });
       
-      cat.on("error", () => {
+      cat.on("error", (err) => {
+        console.error(`❌ Cat process error: ${err}`);
         clearTimeout(timer);
-        resolve(["ok"]); // Fallback
+        resolve(hasReceivedData && lines.length > 0 ? lines : ["ok"]);
       });
       
       cat.on("exit", () => {
@@ -119,7 +136,8 @@ export async function sendGcode(cmd: string): Promise<string[]> {
  * Process command queue sequentially to avoid collisions
  */
 async function processQueue() {
-  if (isProcessing || commandQueue.length === 0) return;
+  if (isProcessing) return;  // Already processing
+  if (commandQueue.length === 0) return;  // Nothing to process
 
   isProcessing = true;
 
@@ -127,9 +145,11 @@ async function processQueue() {
     const command = commandQueue.shift();
     if (command) {
       try {
-        await command();
+        await command();  // Wait for each command to complete
+        // Add small delay between commands to ensure serial port clears
+        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (err) {
-        console.error("Command queue error:", err);
+        console.error("❌ Command queue error:", err);
       }
     }
   }

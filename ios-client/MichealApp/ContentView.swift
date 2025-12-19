@@ -3397,9 +3397,17 @@ struct TemperatureReadings: Codable {
         case bedTarget
     }
     
+    // Default initializer for manual creation
+    init(hotendTemp: Double = 0, hotendTarget: Double = 0, bedTemp: Double = 0, bedTarget: Double = 0) {
+        self.hotendTemp = hotendTemp
+        self.hotendTarget = hotendTarget
+        self.bedTemp = bedTemp
+        self.bedTarget = bedTarget
+    }
+    
+    // Custom decoder with fallback to 0 if keys are missing
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        // Decode with fallback to 0 if keys are missing
         hotendTemp = (try? container.decode(Double.self, forKey: .hotendTemp)) ?? 0
         hotendTarget = (try? container.decode(Double.self, forKey: .hotendTarget)) ?? 0
         bedTemp = (try? container.decode(Double.self, forKey: .bedTemp)) ?? 0
