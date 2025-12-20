@@ -1,4 +1,6 @@
-# File Manager Application
+# Micheal
+
+Batman's Oracle
 
 A modern Next.js file manager application that allows you to upload, organize, and manage files and folders locally.
 
@@ -33,147 +35,147 @@ A modern Next.js file manager application that allows you to upload, organize, a
 ## Getting Started
 
 ### Installation
-```bash
-npm install
-```
-
-### Development
-```bash
-npm run dev
-```
-
-The application will be available at `http://localhost:3000`
-
 # Micheal — Local File Manager + Printer Dashboard
-
-A full-stack project combining a Next.js file manager backend with an iOS SwiftUI client that controls a Marlin-based 3D printer and browses cloud/local files. This README describes how to run and develop the server, the iOS app, and how the APIs work.
 
 "Micheal — where files meet filament."
 
-Catchphrase: "Push bytes, pull prints — make things that matter."
+Push bytes, pull prints — make things that matter.
 
-## Quick Overview
-- Server: Next.js API routes located under `app/api/` serve file storage, printer control, thumbnails and streaming endpoints.
-- iOS app: `ios-client/MichealApp` — SwiftUI app that displays the printer dashboard, SD browser, cloud storage browser, and basic TODO list integration.
-- Uploads: Local uploads directory served by the Next.js server at `/uploads` (server resolves path relative to project root).
+Overview
+--------
+Micheal is a full-stack, self-hosted project combining a Next.js file manager backend with a SwiftUI iOS client. The server provides local/cloud file storage, thumbnailing, streaming and a serial proxy to control a Marlin-based 3D printer. The iOS app provides a unified dashboard to monitor and control the printer, browse cloud files, and manage uploads.
 
----
+This README documents how to run the server, use the iOS app, and understand the key APIs and troubleshooting steps.
 
-## Table of Contents
-- Features
-- Repo layout
-- Getting started (server)
-- Running the iOS app
-- API reference
-- Troubleshooting & notes
-- Development tips
-- License & credits
+Key features
+------------
+- File management: list, upload, download, delete files and folders under a configurable `uploads/` directory.
+- Streaming & thumbnails: serve large files efficiently and generate thumbnails for images.
+- Printer integration: serial proxy to Marlin firmware, endpoints for temperatures, motion, SD listing, and print control.
+- iOS client: unified printer card (status + controls + SD browser), FileManagerView (cloud storage browser), lazy polling to reduce server load.
+- Robustness: server-side serial queue with flushing and inter-command delays to avoid firmware desync.
 
----
+Repository layout
+-----------------
+- `app/` — Next.js app routes and server code (`app/api/*`) including `files`, `printer`, `thumbnail`, `camera-stream`.
+- `ios-client/MichealApp/` — SwiftUI iOS app; `ContentView.swift` holds the dashboard and embedded `PrinterClient` and `FileManagerClient`.
+- `lib/` — Node utilities (compression, indexing, watchers).
+- `public/` — static assets and client-side worker scripts.
+- `scripts/` — helper scripts (thumbnail generation, setup).
 
-## Features
-- File manager: list, upload, download, delete files & folders; streaming for large files; thumbnail generation.
-- Printer control: temperature readout, preheat presets, motion commands, SD card listing, print control (start/pause/stop) and print progress.
-- iOS client: UnifiedPrinterCard (status + controls + SD browser), FileManagerView (cloud storage browser), lazy polling, thumbnail previews.
-- Robust server serial queue with flushing and delays to avoid Marlin desynchronization.
+Quickstart — server
+-------------------
+Requirements:
+- Node.js 18+
+- npm
+- If using printer features, the server host must have access to the serial device (e.g. `/dev/ttyUSB0`).
 
----
-
-## Repo layout (important folders)
-- `app/` — Next.js app routes and server code (APIs live in `app/api/*`).
-	- `app/api/files/route.ts` — file listing, download, upload, delete handlers.
-	- `app/api/printer/*` — serial proxy, status, SD operations, motion/temperature endpoints.
-	- `app/api/thumbnail` — thumbnail generation
-- `ios-client/MichealApp/` — SwiftUI iOS client app (ContentView.swift contains the dashboard + FileManagerView + PrinterClient singleton).
-- `lib/` — shared Node utilities (imageIndexer, compression helpers).
-- `public/` — static assets and upload-worker script.
-
----
-
-## Getting started — Server (development)
-Prerequisites:
-- Node 18+ / npm
-- (On server machine) Access to serial device (e.g. `/dev/ttyUSB0`) for printer control.
-
-Run locally:
+Install and run:
 
 ```bash
-# install
 npm install
-
-# run development server
 npm run dev
+```
 
-# open http://localhost:3000
+The server will start on `http://localhost:3000` by default. On startup, the server logs the uploads directory used, e.g.:
+
+```
+[files] using uploads dir: /path/to/project/uploads
 ```
 
 Notes:
-- The server resolves the uploads directory automatically (searches upward from cwd). Logs include a line like `[files] using uploads dir: /path/to/uploads` on startup.
-- If exposing the server externally, use a secure tunneling solution (ngrok / Cloud) and secure the endpoint.
+- The server will automatically create the `uploads` folder if missing.
+- Large uploads (>100MB) may be compressed automatically for storage efficiency.
 
----
+Quickstart — iOS app
+--------------------
+Requirements:
+- Xcode (recommended latest stable) — the app targets iOS 15+ with iOS 16+ features gated by availability checks.
+- Ensure `ios-client/MichealApp/FileManagerClient.swift` has `SERVER_BASE_URL` pointing to the running server (use a reachable IP from your device or a tunnel URL).
 
-## Running the iOS app (development)
-Prereqs:
-- Xcode (recommended latest stable). Deployment targets in the app support iOS 15+ for iPad and iOS 16+ features are gated by availability checks.
-- Make sure the `SERVER_BASE_URL` in `ios-client/MichealApp/FileManagerClient.swift` points to your running Next.js server (use local IP accessible from device or a tunnel URL).
-
-Steps:
-
-1. Open `ios-client/Micheal.xcodeproj` in Xcode.
-2. Select `MichealApp` target and a device or simulator (iPhone with iOS 16/17+, iPad on iOS 15+ supported).
-3. Build & run.
+Open `ios-client/Micheal.xcodeproj` in Xcode, select the `MichealApp` target and run on a simulator or device.
 
 Developer tips:
-- For physical device debugging, ensure the device can reach the server IP (swap `SERVER_BASE_URL` to the machine IP or use ngrok/Cloudflare tunnel).
-- The app disables aggressive printer polling while browsing cloud storage to avoid overloading the server.
+- For testing on a physical device, either connect the device to the same local network as the server machine and use the host IP, or use a tunneling solution (ngrok / cloud tunnel).
+- The app clears caches before loading the FileManagerView to avoid stale responses.
 
----
+API reference (summary)
+-----------------------
+This is a high-level summary — see `app/api/*` for implementation details.
 
-## API Reference (high level)
+- `GET /api/files?path=<path>`
+	- Returns JSON: `{ files: [{ name, isDirectory, size, modified, path }], currentPath, count }`.
+	- If the `path` points to a file, the server streams the file bytes with appropriate `Content-Type`.
 
-Server exposes these key endpoints (see `app/api/*`):
+- `POST /api/files`
+	- Multipart upload endpoint. Accepts `path` field and uploaded files. Large uploads may be compressed.
 
-- `GET /api/files?path=<path>` — list files in `uploads/<path>`; returns JSON `{ files: [{name,isDirectory,size,modified,path}], currentPath, count }` or streams file bytes when `path` points to a file.
-- `POST /api/files` — multipart upload handler. Accepts `path` field and files. Server may auto-compress large uploads.
-- `DELETE /api/files` — delete file or folder (server validates path stays within uploads dir).
+- `DELETE /api/files`
+	- Deletes a file or folder. Server validates paths so operations stay within the uploads directory.
 
-- `GET /api/printer/status` — returns parsed temperatures and printer state (hotendTemp, hotendTarget, bedTemp, bedTarget, isPrinting, filename, progress bytes).
-- `GET /api/printer/sd?action=list` — list files on SD (proxied via serial M20). `action=progress` returns print progress M27.
-- `POST /api/printer/motion` — send homing or move commands to the printer.
-- `POST /api/printer/serial` — low-level serial proxy (internal). Implemented with a command queue, port flush, inter-command delay.
+- `GET /api/thumbnail?path=...`
+	- Returns generated thumbnails for images.
 
-Also:
-- `GET /api/thumbnail?path=...` — returns generated thumbnails for images.
-- `GET /api/camera-stream` — server-sent continuous camera stream (if configured).
+- `GET /api/printer/status`
+	- Returns parsed temperature values and print progress: `hotendTemp`, `hotendTarget`, `bedTemp`, `bedTarget`, `isPrinting`, `filename`, `bytesPrinted`, `totalBytes`.
 
----
+- `GET /api/printer/sd?action=list` and `action=progress`
+	- Proxies M20 and M27 commands over the serial connection.
 
-## Troubleshooting — Common issues & fixes
+- `POST /api/printer/motion`
+	- Send movement/home commands to the printer.
 
-- Temperatures show 0°C / wrong values:
-	- Server returns raw M105 reply if parsing failed. Check server logs `🌡️ Parsed temperatures:` to confirm parsing.
-	- Ensure serial responses are synchronized; restart server to clear serial queue if responses appear mixed.
+Troubleshooting & common fixes
+------------------------------
+1. Temperatures show 0°C or invalid values
+	 - Confirm the server `GET /api/printer/status` logs `🌡️ Parsed temperatures:`. If not, the server returned raw firmware output that couldn't be parsed.
+	 - Restart the server to clear any serial queue corruption and check the serial device.
 
-- SD listing shows wrong or empty results:
-	- Confirm `GET /api/printer/sd?action=list` is being called and server log shows the M20/M27 responses.
-	- On iOS, ensure `FileManagerClient.listFiles()` sends a `GET` request (the app now explicitly sets `httpMethod = "GET"`).
+2. Cloud storage returns an upload success response when requesting listing
+	 - This was previously caused by cached POST responses. The iOS client now clears caches and forces fresh GET requests. Ensure your device receives a fresh `GET /api/files` call (check server logs for `🌐 GET /api/files called`).
 
-- Cloud storage shows upload response instead of listing:
-	- This was caused by an old cached POST response. The iOS client was updated to clear caches on `FileManagerView` appear and force fresh GET requests.
+3. Serial queue or mixed responses (M20 output mixed with M105 replies)
+	 - The server implements a serial command queue, flushes the port before each command, and waits a small delay between commands. If you still see corruption, restart the server and verify the serial device stability.
 
-- Serial queue corruption (M20 replies attached to M105 etc.):
-	- Server-side fix: flush port before commands, add a 50ms inter-command delay, and skip firmware echo lines. If corruption persists, restart server and check serial port health.
+4. Uploads fail with connection resets
+	 - Large uploads may take time; check server logs and network stability. The server uses streaming for large files and can compress uploads if necessary.
 
----
+Development notes
+-----------------
+- The iOS app embeds `PrinterClient` and `FileManagerClient` singletons for now. Refactoring them into separate Swift files is recommended for maintainability.
+- The server `app/api/printer/serial.ts` contains the serial queue implementation with a 50ms inter-command delay and 4s timeouts.
+- Use `git log` to locate historical commits like `printerbackend` if you need to restore earlier working states.
 
-## Development notes & recommendations
+Testing endpoints locally
+-------------------------
+Use `curl` for quick checks:
 
-- Keep `ios-client/MichealApp/ContentView.swift` as the single-file SwiftUI host for the printer client and dashboard. The `PrinterClient` singleton is embedded there for now.
-- `FileManagerClient.swift` contains the HTTP client used by the iOS app; the `SERVER_BASE_URL` constant must be set for device testing.
-- Use `git log` to locate the `printerbackend` commit if you need to restore a known-good state (`git show 24be68b` contains the FileManager client that worked previously).
+```bash
+curl "http://localhost:3000/api/files"
+curl "http://localhost:3000/api/printer/status"
+```
 
----
+If you get a JSON error response, check the server console for detailed logs.
+
+Contributing
+------------
+- Follow the code style in the repo.
+- For server changes, add tests where appropriate and validate large-file streaming.
+- For iOS changes, keep UI availability checks (`#available`) for iOS 16+ features; the app supports iOS 15+.
+
+License & credits
+-----------------
+- This repository is maintained by the project owner.
+- Utilities under `lib/` provide compression and indexing helpers.
+
+Contact / Next steps
+--------------------
+If you want, I can:
+- Add a short README inside `ios-client/` with quick build/run steps.
+- Create a `CONTRIBUTING.md` or `CHANGELOG.md`.
+- Push these changes to a branch and open a PR.
+
+Happy printing! 👋
 
 ## Tests & Validation
 

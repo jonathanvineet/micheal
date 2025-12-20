@@ -1,6 +1,11 @@
 {
-  "name": "file-manager",
+  "name": "micheal",
   "version": "0.1.0",
+  "description": "Micheal — Local File Manager + Printer Dashboard",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/micheal.git"
+  },
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
