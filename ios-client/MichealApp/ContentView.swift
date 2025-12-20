@@ -4371,8 +4371,7 @@ struct SDFileBrowserView: View {
                     }
                 }
             }
-            .toolbarBackground(.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .modifier(ToolbarBackgroundModifier())
         }
         .onAppear(perform: loadFilesIfNeeded)
     }
@@ -4474,6 +4473,20 @@ struct SDFileBrowserView: View {
     private func loadFilesIfNeeded() {
         if printerClient.sdFiles.isEmpty {
             refreshFiles()
+        }
+    }
+}
+
+// MARK: - iOS Version Compatibility
+struct ToolbarBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content
+                .toolbarBackground(.black, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        } else {
+            // iOS 15 - toolbar background not supported
+            content
         }
     }
 }
