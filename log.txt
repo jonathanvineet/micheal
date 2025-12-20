@@ -1,317 +1,41 @@
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 268ms (compile: 1848µs, render: 266ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.73 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.73, bedTarget: 0 }
- GET /api/printer/status 200 in 585ms (compile: 3ms, render: 582ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 268ms (compile: 2ms, render: 266ms)
-📤 Sending: M114
- GET /api/thumbnail?path=IMG_5535.PNG&w=160&h=160 200 in 1746ms (compile: 1675ms, render: 71ms)
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.78 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.78, bedTarget: 0 }
- GET /api/printer/status 200 in 2.1s (compile: 3ms, render: 2.1s)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 321ms (compile: 5ms, render: 316ms)
-[files] using uploads dir: /home/jonjon/micheal/uploads
-🌐 POST /api/files called
-🧹 Cleaning up stale connection 2
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.76 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.76, bedTarget: 0 }
- GET /api/printer/status 200 in 615ms (compile: 1896µs, render: 613ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 285ms (compile: 3ms, render: 283ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.24 /0.00 B:27.78 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.24, hotendTarget: 0, bedTemp: 27.78, bedTarget: 0 }
- GET /api/printer/status 200 in 613ms (compile: 2000µs, render: 611ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 279ms (compile: 1739µs, render: 278ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.76 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.76, bedTarget: 0 }
- GET /api/printer/status 200 in 622ms (compile: 3ms, render: 618ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 298ms (compile: 4ms, render: 295ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.84 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.84, bedTarget: 0 }
- GET /api/printer/status 200 in 626ms (compile: 1693µs, render: 624ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 283ms (compile: 1856µs, render: 281ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.81 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.81, bedTarget: 0 }
- GET /api/printer/status 200 in 624ms (compile: 2ms, render: 622ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 286ms (compile: 2ms, render: 284ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.27 /0.00 B:27.76 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.27, hotendTarget: 0, bedTemp: 27.76, bedTarget: 0 }
- GET /api/printer/status 200 in 620ms (compile: 1859µs, render: 618ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 293ms (compile: 1910µs, render: 291ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.76 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.76, bedTarget: 0 }
- GET /api/printer/status 200 in 625ms (compile: 2ms, render: 623ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.81 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.81, bedTarget: 0 }
- GET /api/printer/status 200 in 640ms (compile: 7ms, render: 633ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 285ms (compile: 1741µs, render: 283ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 292ms (compile: 1945µs, render: 290ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.76 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.76, bedTarget: 0 }
- GET /api/printer/status 200 in 629ms (compile: 1494µs, render: 627ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 290ms (compile: 1709µs, render: 288ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.24 /0.00 B:27.78 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.24, hotendTarget: 0, bedTemp: 27.78, bedTarget: 0 }
- GET /api/printer/status 200 in 712ms (compile: 2ms, render: 710ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 301ms (compile: 2ms, render: 299ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.87 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.87, bedTarget: 0 }
- GET /api/printer/status 200 in 641ms (compile: 1612µs, render: 639ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 293ms (compile: 1466µs, render: 292ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.78 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.78, bedTarget: 0 }
- GET /api/printer/status 200 in 643ms (compile: 2ms, render: 641ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 291ms (compile: 1842µs, render: 290ms)
- POST /api/files 200 in 2.1min (compile: 847ms, render: 2.1min)
-Error uploading file: Error: aborted
-    at ignore-listed frames {
-  code: 'ECONNRESET'
-}
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.78 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.78, bedTarget: 0 }
- GET /api/printer/status 200 in 660ms (compile: 3ms, render: 657ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 294ms (compile: 3ms, render: 291ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.81 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.81, bedTarget: 0 }
- GET /api/printer/status 200 in 636ms (compile: 2ms, render: 634ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 293ms (compile: 1649µs, render: 292ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.81 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.81, bedTarget: 0 }
- GET /api/printer/status 200 in 640ms (compile: 2ms, render: 638ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 310ms (compile: 3ms, render: 308ms)
- GET /api/camera-stream 200 in 3.2min (compile: 7ms, render: 3.2min)
-❌ Client 3 disconnected during frame send
-📱 Client 4 connected. Active subscribers: 3
- GET /api/ping 200 in 7ms (compile: 3ms, render: 4ms)
- GET /api/todos 200 in 13ms (compile: 9ms, render: 4ms)
- GET /api/ping 200 in 17ms (compile: 14ms, render: 3ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.18 /0.00 B:27.76 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.18, hotendTarget: 0, bedTemp: 27.76, bedTarget: 0 }
- GET /api/printer/status 200 in 639ms (compile: 1379µs, render: 637ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 300ms (compile: 1777µs, render: 298ms)
-🧹 Cleaning up stale connection 3
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.24 /0.00 B:27.87 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.24, hotendTarget: 0, bedTemp: 27.87, bedTarget: 0 }
- GET /api/printer/status 200 in 660ms (compile: 3ms, render: 657ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 298ms (compile: 2ms, render: 296ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.84 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.84, bedTarget: 0 }
- GET /api/printer/status 200 in 650ms (compile: 1696µs, render: 649ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 297ms (compile: 2ms, render: 295ms)
-📤 Sending: M114
-📥 Received: X:0.00 Y:0.00 Z:87.00 E:0.00 Count X:0 Y:0 Z:69600
-📥 Received: ok
-✅ Command complete: M114
-📤 Sending: M105
-📥 Received: ok T:28.21 /0.00 B:27.78 /0.00 @:0 B@:0
-✅ Command complete: M105
-🌡️  Parsed temperatures: { hotendTemp: 28.21, hotendTarget: 0, bedTemp: 27.78, bedTarget: 0 }
- GET /api/printer/status 200 in 646ms (compile: 2ms, render: 644ms)
-📤 Sending: M27
-📥 Received: TF printing byte 0/0
-📥 Received: ok
-✅ Command complete: M27
- GET /api/printer/sd?action=progress 200 in 325ms (compile: 1814µs, render: 324ms)
-^C GET /api/camera-stream 200 in 43s (compile: 3ms, render: 43s)
+METHOD 1 (RECOMMENDED): Python (cleanest, safest)
+python3 - << 'EOF'
+import serial, time
+
+s = serial.Serial(
+    "/dev/ttyUSB0",
+    115200,
+    timeout=2,
+    dsrdtr=False,
+    rtscts=False
+)
+
+time.sleep(2)
+
+def send(cmd):
+    print(">>", cmd)
+    s.write((cmd + "\n").encode())
+    time.sleep(0.3)
+    while s.in_waiting:
+        print(s.readline().decode(errors="ignore").strip())
+
+send("G91")          # relative mode
+send("G1 Z-1 F120")  # move Z down 1mm
+
+s.close()
+EOF
 
 
-jonjon@jonjon:~/micheal$ 
+✔ This WILL move the Z axis
+✔ No printer reset
+✔ Proper response handling
 
+✅ METHOD 2: echo → serial (quick test)
+
+⚠️ Only use if you already ran stty -hupcl.
+
+1️⃣ (Once per session)
+sudo stty -F /dev/ttyUSB0 115200 raw -echo -hupcl
+
+2️⃣ Send G-code
+echo -e "G91\nG1 Z-1 F120\n" | sudo tee /dev/ttyUSB0
